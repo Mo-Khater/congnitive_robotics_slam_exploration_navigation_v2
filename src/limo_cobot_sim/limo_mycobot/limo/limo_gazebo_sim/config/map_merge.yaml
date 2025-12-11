@@ -1,0 +1,26 @@
+known_init_poses: true
+
+robots:
+  - name: "robot1"
+    map_topic: "/robot1/map"
+    odom_frame: "robot1_odom"
+    pose:
+      x: 0.0
+      y: 0.0
+      yaw: 0.0
+
+  - name: "robot2"
+    map_topic: "/robot2/map"
+    odom_frame: "robot2_odom"
+    pose:
+      x: 1.5
+      y: 0.0
+      yaw: 0.0
+
+  - name: "robot3"
+    map_topic: "/robot3/map"
+    odom_frame: "robot3_odom"
+    pose:
+      x: -1.5
+      y: 0.0
+      yaw: 0.0

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+  <!-- Load robot description -->
+  <param name="robot_description" textfile="$(find mycobot_description)/urdf/mycobot/mycobot_urdf.urdf"/>
+
+  <!-- Launch Gazebo with robot -->
+  <include file="$(find limo_cobot_moveit)/launch/gazebo.launch"/>
+
+  <!-- Launch RViz without MoveIt -->
+  <node name="rviz" pkg="rviz" type="rviz" args="-d $(find limo_cobot_moveit)/config/moveit.rviz" output="screen"/>
+
+</launch>
