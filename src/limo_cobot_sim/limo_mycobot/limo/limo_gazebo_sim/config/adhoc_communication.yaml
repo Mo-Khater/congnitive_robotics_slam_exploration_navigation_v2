@@ -1,0 +1,19 @@
+# adhoc_communication.yaml
+# Example config for adhoc_communication node so all robots join same multicast group.
+network:
+  interface: ""             # optional: set network interface (e.g. eth0)
+  multicast_group: "239.255.0.1"
+  multicast_port: 7000
+  ttl: 1
+
+ros:
+  advertise_topics:
+    - /robot1/map
+    - /robot2/map
+    - /robot3/map
+  subscribe_topics:
+    - /robot1/map
+    - /robot2/map
+    - /robot3/map
+  # if your adhoc_communication package requires explicit topic remaps or namespaces,
+  # add them here per its documentation.

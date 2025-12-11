@@ -1,0 +1,37 @@
+#============== GENERAL PARAMS ==============#
+world_frame: world           # الإطار المرجعي الموحد لكل الخرائط
+merged_map_frame: world      # الإطار الذي سيتم نشر merged_map عليه
+
+merging_rate: 5.0            # معدل دمج الخرائط (Hz)
+discovery_rate: 0.33         # سرعة اكتشاف روبوتات جديدة
+
+#============== INPUT MAP TOPICS ============#
+robot_map_topic: map          # داخل namespace = /robot1/map , /robot2/map ...
+robot_map_metadata_topic: map_metadata
+robot_pose_topic: pose        # أو يمكنك استخدام TF بدل ذلك
+
+#============== MAP PROCESSING ==============#
+estimation_mode: 1            # 0 = manual, 1 = auto-detect (أفضل للروبوتات المتحركة)
+transform_timeout: 0.2
+karto_integration: false
+
+#============== OUTPUT ======================#
+merged_map_topic: merged_map
+merged_map_metadata_topic: merged_map_metadata
+
+#============== TRANSFORM ESTIMATION OPTIONS ==============#
+unknown_initial_poses: true
+max_robot_map_delay: 2.0
+
+#============== GRID MAP ALIGNMENT OPTIONS ==============#
+icp_iterations: 30
+icp_max_correspondence_dist: 0.5
+icp_transform_eps: 1e-6
+icp_euclidean_fit_eps: 0.3
+
+initial_offset_x: 0.0
+initial_offset_y: 0.0
+initial_offset_yaw: 0.0
+
+#============== DEBUG =======================#
+debug: true
