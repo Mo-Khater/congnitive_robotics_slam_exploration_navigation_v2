@@ -29,12 +29,6 @@
     <node name="controller_spawner" pkg="controller_manager" type="spawner"
           respawn="false" output="screen" args="limo_state_controller" />
 
-    <!-- Initial pose for map merge -->
-    <param name="map_merge/init_pose_x" value="0.0"/>
-    <param name="map_merge/init_pose_y" value="0.0"/>
-    <param name="map_merge/init_pose_z" value="0.0"/>
-    <param name="map_merge/init_pose_yaw" value="0.0"/>
-
     <group if="$(arg use_slam)">
       <node pkg="slam_toolbox" type="async_slam_toolbox_node" name="slam_toolbox" output="screen">
         <rosparam command="load" file="$(arg slam_toolbox_config)"/>
@@ -44,6 +38,7 @@
         <param name="odom_frame" value="robot1_odom"/>
         <param name="map_frame" value="robot1_map"/>
         <param name="base_frame" value="robot1_base_footprint"/>
+        <param name="use_map_saver" value="false"/>
       </node>
     </group>
   </group>
@@ -63,23 +58,16 @@
     <node name="controller_spawner" pkg="controller_manager" type="spawner"
           respawn="false" output="screen" args="limo_state_controller" />
 
-    <!-- Initial pose for map merge -->
-    <param name="map_merge/init_pose_x" value="10"/>
-    <param name="map_merge/init_pose_y" value="0.0"/>
-    <param name="map_merge/init_pose_z" value="0.0"/>
-    <param name="map_merge/init_pose_yaw" value="0.0"/>
-
     <group if="$(arg use_slam)">
       <node pkg="slam_toolbox" type="async_slam_toolbox_node" name="slam_toolbox" output="screen">
         <rosparam command="load" file="$(arg slam_toolbox_config)"/>
-
-        
         <remap from="/scan" to="/robot2/scan" />
         <remap from="/map" to="/robot2/map" />
         
         <param name="odom_frame" value="robot2_odom"/>
         <param name="map_frame" value="robot2_map"/>
         <param name="base_frame" value="robot2_base_footprint"/>
+        <param name="use_map_saver" value="false"/>
       </node>
     </group>
   </group>
@@ -99,12 +87,6 @@
     <node name="controller_spawner" pkg="controller_manager" type="spawner"
           respawn="false" output="screen" args="limo_state_controller" />
 
-    <!-- Initial pose for map merge -->
-    <param name="map_merge/init_pose_x" value="-10"/>
-    <param name="map_merge/init_pose_y" value="0.0"/>
-    <param name="map_merge/init_pose_z" value="0.0"/>
-    <param name="map_merge/init_pose_yaw" value="0.0"/>
-
     <group if="$(arg use_slam)">
       <node pkg="slam_toolbox" type="async_slam_toolbox_node" name="slam_toolbox" output="screen">
         <rosparam command="load" file="$(arg slam_toolbox_config)"/>
@@ -114,42 +96,25 @@
         <param name="odom_frame" value="robot3_odom"/>
         <param name="map_frame" value="robot3_map"/>
         <param name="base_frame" value="robot3_base_footprint"/>
+        <param name="use_map_saver" value="false"/>
       </node>
     </group>
   </group>
 
-  <!-- Static transforms from world to each robot's map -->
-  <!-- These are always published regardless of map_merge -->
-<!-- All robots' maps at world origin -->
-<node pkg="tf" type="static_transform_publisher" name="world_to_robot1_map" 
-      args="0 0 0 0 0 0 world robot1_map 100" />
-<node pkg="tf" type="static_transform_publisher" name="world_to_robot2_map" 
-      args="10 0 0 0 0 0 world robot2_map 100" />
-<node pkg="tf" type="static_transform_publisher" name="world_to_robot3_map" 
-      args="-10 0 0 0 0 0 world robot3_map 100" />
+  <!-- Static transforms from world to each robot's map frame -->
+  <node pkg="tf" type="static_transform_publisher" name="world_to_robot1_map" 
+        args="0 0 0 0 0 0 world robot1_map 100" />
+  <node pkg="tf" type="static_transform_publisher" name="world_to_robot2_map" 
+        args="10 0 0 0 0 0 world robot2_map 100" />
+  <node pkg="tf" type="static_transform_publisher" name="world_to_robot3_map" 
+        args="-10 0 0 0 0 0 world robot3_map 100" />
 
-  <!-- Map Merging Node - OPTIONAL, only launch if needed -->
+  <!-- Custom Map Merger -->
   <group if="$(arg use_map_merge)">
-    <node pkg="multirobot_map_merge" type="map_merge" respawn="false" name="map_merge" output="screen">
-      <param name="robot_map_topic" value="map"/>
-      <param name="robot_namespace" value="robot"/>
-      <param name="merged_map_topic" value="merged_map"/>  <!-- Changed from "map" to avoid conflicts -->
+    <node pkg="limo_gazebo_sim" type="custom_map_merger.py" name="custom_map_merger" output="screen">
       <param name="world_frame" value="world"/>
-      <param name="known_init_poses" value="true"/>
-      <param name="merging_rate" value="1.0"/>  <!-- Reduced rate to prevent crashes -->
-      <param name="discovery_rate" value="0.05"/>
-      <param name="estimation_rate" value="0.5"/>
-      <param name="estimation_confidence" value="1.0"/>
-    <!-- <rosparam param="known_robots">["robot1", "robot2", "robot3"]</rosparam> -->
-    <!-- Explicitly remap the robot map topics -->
-    <remap from="robot1/map" to="/robot1/map"/>
-    <remap from="robot2/map" to="/robot2/map"/>
-    <remap from="robot3/map" to="/robot3/map"/>
-    
-    <rosparam param="known_init_poses_x">[0.0, 10, -10]</rosparam>
-    <rosparam param="known_init_poses_y">[0.0, 0.0, 0.0]</rosparam>
-    <rosparam param="known_init_poses_yaw">[0.0, 0.0, 0.0]</rosparam>
-
+      <param name="merged_map_topic" value="merged_map"/>
+      <param name="merge_rate" value="2.0"/>
     </node>
   </group>
 
