@@ -1899,6 +1899,14 @@
       </link>
       <static>1</static>
     </model>
+
+    <!-- Goal Detection Blue Ball -->
+    <include>
+      <uri>model://blue_ball</uri>
+      <name>goal_blue_ball</name>
+      <pose>5 5 0.15 0 0 0</pose>
+    </include>
+
     <state world_name='default'>
       <sim_time>67 428000000</sim_time>
       <real_time>73 596103341</real_time>

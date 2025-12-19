@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<launch>
+    <node name="goal_detector_robot1" pkg="limo_gazebo_sim" type="goal_detector.py" output="screen">
+        <param name="robot_name" value="robot1"/>
+    </node>
+    
+    <node name="goal_detector_robot2" pkg="limo_gazebo_sim" type="goal_detector.py" output="screen">
+        <param name="robot_name" value="robot2"/>
+    </node>
+    
+    <node name="goal_detector_robot3" pkg="limo_gazebo_sim" type="goal_detector.py" output="screen">
+        <param name="robot_name" value="robot3"/>
+    </node>
+</launch>

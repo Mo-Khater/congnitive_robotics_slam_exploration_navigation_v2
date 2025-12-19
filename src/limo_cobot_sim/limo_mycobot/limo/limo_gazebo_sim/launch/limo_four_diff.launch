@@ -1,5 +1,7 @@
 <?xml version="1.0"?>
 <launch>
+
+  <env name="GAZEBO_MODEL_PATH" value="$(find limo_gazebo_sim)/models:$(optenv GAZEBO_MODEL_PATH)"/>
   <arg name="world_name" default="$(find limo_gazebo_sim)/worlds/map2.world"/>
   <arg name="use_slam" default="true"/>
   <arg name="use_map_merge" default="true"/>
@@ -90,6 +92,9 @@
         <param name="min_cluster_size" value="3"/>
         <param name="max_range" value="5.0"/>
       </node>
+
+      <!-- Goal Detection -->
+      <include file="$(find limo_gazebo_sim)/launch/goal_detection.launch"/>
     </group>
 
     <!-- Exploration -->
@@ -175,6 +180,9 @@
         <param name="min_cluster_size" value="3"/>
         <param name="max_range" value="5.0"/>
       </node>
+
+      <!-- Goal Detection -->
+      <include file="$(find limo_gazebo_sim)/launch/goal_detection.launch"/>
     </group>
 
     <!-- Exploration -->
@@ -259,6 +267,9 @@
         <param name="min_cluster_size" value="3"/>
         <param name="max_range" value="5.0"/>
       </node>
+
+      <!-- Goal Detection -->
+      <include file="$(find limo_gazebo_sim)/launch/goal_detection.launch"/>
     </group>
 
     <!-- Exploration -->
