@@ -1,5 +1,7 @@
 <?xml version="1.0"?>
 <launch>
+  <!-- SUPPRESS TF WARNINGS -->
+  <!-- <env name="ROSCONSOLE_CONFIG_FILE" value="$(find limo_gazebo_sim)/config/rosconsole.conf"/> -->
 
   <env name="GAZEBO_MODEL_PATH" value="$(find limo_gazebo_sim)/models:$(optenv GAZEBO_MODEL_PATH)"/>
   <arg name="world_name" default="$(find limo_gazebo_sim)/worlds/map2.world"/>
@@ -16,7 +18,7 @@
     <arg name="use_sim_time" value="true"/>
     <arg name="gui" value="true"/>
     <arg name="headless" value="false"/>
-  </include>    
+  </include>   
 
   <!-- Robot 1 -->
   <group ns="robot1">

@@ -5,6 +5,7 @@ from nav_msgs.msg import OccupancyGrid, Path
 from geometry_msgs.msg import PoseStamped
 from std_msgs.msg import Header
 import heapq
+from scipy.ndimage import distance_transform_edt
 
 class AStarPlanner:
     def __init__(self):
@@ -14,6 +15,7 @@ class AStarPlanner:
         self.map_info = None
         self.goal = None
         self.start = None
+        self.distance_map = None  # Distance from obstacles
         
         # Subscribers
         self.map_sub = rospy.Subscriber('/robot3/map', OccupancyGrid, self.map_callback)
@@ -26,11 +28,29 @@ class AStarPlanner:
         self.obstacle_threshold = 50  # Occupancy values > this are obstacles
         self.unknown_is_free = True  # Treat unknown space as free for initial movement
         
-        rospy.loginfo("Global Planner initialized")
+        # *** NEW PARAMETERS FOR OBSTACLE AVOIDANCE ***
+        self.inflation_radius = 5  # cells to inflate obstacles (increase for more clearance)
+        self.distance_weight = 10.0  # Weight for distance cost (higher = stay further from obstacles)
+        
+        rospy.loginfo("Global Planner initialized with obstacle inflation")
         
     def map_callback(self, msg):
         self.map_data = np.array(msg.data).reshape((msg.info.height, msg.info.width))
         self.map_info = msg.info
+        
+        # Compute distance transform when map is updated
+        self.compute_distance_map()
+        
+    def compute_distance_map(self):
+        """Compute distance from each cell to nearest obstacle"""
+        # Create binary obstacle map (1 = free, 0 = obstacle)
+        free_space = np.ones_like(self.map_data, dtype=bool)
+        free_space[self.map_data > self.obstacle_threshold] = False
+        free_space[self.map_data == -1] = True  # Treat unknown as free
+        
+        # Compute Euclidean distance transform
+        self.distance_map = distance_transform_edt(free_space)
+        rospy.loginfo("Distance map computed")
         
     def pose_callback(self, msg):
         self.start = msg
@@ -52,7 +72,7 @@ class AStarPlanner:
         y = my * self.map_info.resolution + self.map_info.origin.position.y
         return x, y
         
-    def is_valid(self, mx, my, allow_unknown=True):
+    def is_valid(self, mx, my, allow_unknown=True, check_inflation=True):
         """Check if map coordinates are valid and not occupied"""
         if mx < 0 or mx >= self.map_info.width or my < 0 or my >= self.map_info.height:
             return False
@@ -67,12 +87,17 @@ class AStarPlanner:
         if cell_value == -1:
             return allow_unknown  # Allow unknown cells if specified
         
+        # *** NEW: Check if within inflation radius of obstacles ***
+        if check_inflation and self.distance_map is not None:
+            if self.distance_map[my, mx] < self.inflation_radius:
+                return False
+        
         # Free cell
         return True
     
     def find_nearest_free_cell(self, mx, my, max_radius=10):
         """Find nearest free cell from given position"""
-        if self.is_valid(mx, my, allow_unknown=True):
+        if self.is_valid(mx, my, allow_unknown=True, check_inflation=False):
             return mx, my
         
         # Search in expanding circles
@@ -81,7 +106,7 @@ class AStarPlanner:
                 for dy in range(-radius, radius + 1):
                     if abs(dx) == radius or abs(dy) == radius:  # Only check perimeter
                         nx, ny = mx + dx, my + dy
-                        if self.is_valid(nx, ny, allow_unknown=True):
+                        if self.is_valid(nx, ny, allow_unknown=True, check_inflation=False):
                             rospy.loginfo(f"Adjusted position from ({mx}, {my}) to ({nx}, {ny})")
                             return nx, ny
         
@@ -90,6 +115,24 @@ class AStarPlanner:
     def heuristic(self, a, b):
         """Euclidean distance heuristic"""
         return np.sqrt((a[0] - b[0])**2 + (a[1] - b[1])**2)
+    
+    def get_distance_cost(self, node):
+        """Get cost based on distance from obstacles (lower distance = higher cost)"""
+        if self.distance_map is None:
+            return 0.0
+        
+        mx, my = node
+        dist = self.distance_map[my, mx]
+        
+        # Exponential decay: closer to obstacles = higher cost
+        # Using max to avoid division by zero
+        if dist < 1.0:
+            return self.distance_weight * 10.0  # Very high cost near obstacles
+        elif dist < self.inflation_radius * 2:
+            # Smooth cost gradient
+            return self.distance_weight / dist
+        else:
+            return 0.0  # No penalty far from obstacles
         
     def get_neighbors(self, node):
         """Get valid neighbors (8-connected)"""
@@ -99,15 +142,20 @@ class AStarPlanner:
                 if dx == 0 and dy == 0:
                     continue
                 nx, ny = node[0] + dx, node[1] + dy
-                # Allow planning through unknown space
-                if self.is_valid(nx, ny, allow_unknown=True):
+                # Allow planning through unknown space but not inflated obstacles
+                if self.is_valid(nx, ny, allow_unknown=True, check_inflation=False):
                     # Diagonal moves cost more
-                    cost = 1.414 if dx != 0 and dy != 0 else 1.0
-                    neighbors.append(((nx, ny), cost))
+                    base_cost = 1.414 if dx != 0 and dy != 0 else 1.0
+                    
+                    # *** NEW: Add distance-based cost ***
+                    distance_cost = self.get_distance_cost((nx, ny))
+                    total_cost = base_cost + distance_cost
+                    
+                    neighbors.append(((nx, ny), total_cost))
         return neighbors
         
     def a_star(self, start, goal):
-        """A* pathfinding algorithm"""
+        """A* pathfinding algorithm with obstacle avoidance"""
         open_set = []
         heapq.heappush(open_set, (0, start))
         
@@ -150,6 +198,10 @@ class AStarPlanner:
         
     def plan_path(self):
         """Plan path from start to goal"""
+        if self.distance_map is None:
+            rospy.logwarn("Distance map not ready yet")
+            return
+            
         start_x = self.start.pose.position.x
         start_y = self.start.pose.position.y
         goal_x = self.goal.pose.position.x

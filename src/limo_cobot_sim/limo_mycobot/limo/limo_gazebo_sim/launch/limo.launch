@@ -1,0 +1,124 @@
+<?xml version="1.0"?>
+<launch>
+
+  <!-- ================= Arguments ================= -->
+  <arg name="world_name"
+       default="$(find limo_gazebo_sim)/worlds/map2.world"/>
+  <arg name="use_slam" default="true"/>
+  <arg name="use_navigation" default="true"/>
+  <arg name="use_exploration" default="true"/>
+  <arg name="slam_toolbox_config"
+       default="$(find limo_gazebo_sim)/config/slam_toolbox.yaml"/>
+
+  <!-- ================= Gazebo ================= -->
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="world_name" value="$(arg world_name)"/>
+    <arg name="paused" value="false"/>
+    <arg name="use_sim_time" value="true"/>
+    <arg name="gui" value="true"/>
+  </include>
+
+  <!-- ================= Robot Description ================= -->
+  <param name="robot_description"
+         command="$(find xacro)/xacro '$(find limo_description)/urdf/n_four_diff.xacro'" />
+
+  <!-- ================= Spawn Robot ================= -->
+  <node name="spawn_limo"
+        pkg="gazebo_ros"
+        type="spawn_model"
+        output="screen"
+        args="-param robot_description -urdf -model limo -x 0 -y 0 -z 0.1 -Y 0"/>
+
+  <!-- ================= State Publishers ================= -->
+  <node pkg="joint_state_publisher"
+        type="joint_state_publisher"
+        name="joint_state_publisher"/>
+
+  <node pkg="robot_state_publisher"
+        type="robot_state_publisher"
+        name="robot_state_publisher"/>
+
+  <!-- ================= Controllers ================= -->
+  <rosparam file="$(find limo_gazebo_sim)/config/limo_four_diff_control.yaml"
+            command="load"/>
+
+  <node name="controller_spawner"
+        pkg="controller_manager"
+        type="spawner"
+        args="limo_state_controller"
+        output="screen"/>
+
+  <!-- ================= SLAM ================= -->
+  <group if="$(arg use_slam)">
+    <node pkg="slam_toolbox"
+          type="async_slam_toolbox_node"
+          name="slam_toolbox"
+          output="screen">
+      <rosparam command="load" file="$(arg slam_toolbox_config)"/>
+
+      <param name="map_frame"  value="limo_map"/>
+      <param name="odom_frame" value="limo_odom"/>
+      <param name="base_frame" value="limo_base_footprint"/>
+      <param name="use_map_saver" value="false"/>
+    </node>
+  </group>
+
+  <!-- ================= Navigation ================= -->
+  <group if="$(arg use_navigation)">
+
+    <node name="pose_tracker"
+          pkg="limo_gazebo_sim"
+          type="n_pose_tracker.py"
+          output="screen"/>
+
+    <node name="global_planner"
+          pkg="limo_gazebo_sim"
+          type="n_global_planner.py"
+          output="screen"/>
+
+    <node name="local_planner"
+          pkg="limo_gazebo_sim"
+          type="n_local_planner.py"
+          output="screen">
+      <param name="max_vel_x" value="0.5"/>
+      <param name="min_vel_x" value="-0.2"/>
+      <param name="max_vel_theta" value="1.0"/>
+      <param name="max_acc_x" value="0.5"/>
+      <param name="max_acc_theta" value="1.0"/>
+      <param name="dt" value="0.2"/>
+      <param name="predict_time" value="2.0"/>
+      <param name="robot_radius" value="0.2"/>
+    </node>
+
+    <node name="costmap_generator"
+          pkg="limo_gazebo_sim"
+          type="n_costmap_generator.py"
+          output="screen"/>
+
+    <node name="goal_manager"
+          pkg="limo_gazebo_sim"
+          type="n_goal_manager.py"
+          output="screen"/>
+
+    <node name="obstacle_detector"
+          pkg="limo_gazebo_sim"
+          type="n_obstacle_detector.py"
+          output="screen"/>
+
+  </group>
+
+  <!-- ================= Exploration ================= -->
+  <group if="$(arg use_exploration)">
+    <node name="frontier_explorer"
+          pkg="limo_gazebo_sim"
+          type="n_frontier_explorer.py"
+          output="screen"/>
+  </group>
+
+  <!-- ================= RViz ================= -->
+  <node pkg="rviz"
+        type="rviz"
+        name="rviz"
+        args="-d $(find limo_gazebo_sim)/rviz/rviz_config.rviz"/>
+
+</launch>

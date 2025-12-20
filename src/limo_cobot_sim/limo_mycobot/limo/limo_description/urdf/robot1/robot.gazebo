@@ -1,0 +1,58 @@
+<?xml version="1.0"?>
+<robot name="limo_four_diff" xmlns:xacro="http://ros.org/wiki/xacro">
+
+    <xacro:arg name="robot_namespace" default="robot1"/>
+    <xacro:arg name="frame_prefix" default="${robot_namespace}"/>
+
+    <xacro:include filename="$(find limo_description)/urdf/limo_gazebo.gazebo">
+    <xacro:arg name="robot_namespace" value="${robot_namespace}" />
+    <xacro:arg name="frame_prefix" value="${frame_prefix}" />
+    </xacro:include>
+
+    <!-- Sensors -->
+    <xacro:gazebo_laser frame_prefix="${frame_prefix}_laser" />
+    <xacro:gazebo_depth_camera frame_prefix="${frame_prefix}_depth_camera" />
+    <xacro:gazebo_imu frame_prefix="${frame_prefix}_imu" />
+
+    <!-- Wheel contact parameters -->
+    <gazebo reference="${frame_prefix}_front_left_wheel">
+        <mu1>10</mu1><mu2>10</mu2><kp>10000000.0</kp><kd>1.0</kd>
+        <minDepth>0.01</minDepth><fdir1>1 0 0</fdir1><maxContacts value="64"/>
+    </gazebo>
+    <gazebo reference="${frame_prefix}_front_right_wheel">
+        <mu1>10</mu1><mu2>10</mu2><kp>10000000.0</kp><kd>1.0</kd>
+        <minDepth>0.01</minDepth><fdir1>1 0 0</fdir1><maxContacts value="64"/>
+    </gazebo>
+    <gazebo reference="${frame_prefix}_rear_left_wheel">
+        <mu1>10</mu1><mu2>10</mu2><kp>10000000.0</kp><kd>1.0</kd>
+        <minDepth>0.01</minDepth><fdir1>1 0 0</fdir1><maxContacts value="64"/>
+    </gazebo>
+    <gazebo reference="${frame_prefix}_rear_right_wheel">
+        <mu1>10</mu1><mu2>10</mu2><kp>10000000.0</kp><kd>1.0</kd>
+        <minDepth>0.01</minDepth><fdir1>1 0 0</fdir1><maxContacts value="64"/>
+    </gazebo>
+
+    <!-- Skid-steer drive plugin -->
+    <gazebo>
+        <plugin name="four_diff_controller" filename="libgazebo_ros_skid_steer_drive.so">
+            <updateRate>100.0</updateRate>
+            <robotNamespace>/${robot_namespace}</robotNamespace>
+            <leftFrontJoint>${frame_prefix}_front_left_wheel</leftFrontJoint>
+            <rightFrontJoint>${frame_prefix}_front_right_wheel</rightFrontJoint>
+            <leftRearJoint>${frame_prefix}_rear_left_wheel</leftRearJoint>
+            <rightRearJoint>${frame_prefix}_rear_right_wheel</rightRearJoint>
+            <wheelSeparation>0.172</wheelSeparation>
+            <wheelDiameter>0.09</wheelDiameter>
+            <robotBaseFrame>${frame_prefix}_base_footprint</robotBaseFrame>
+            <commandTopic>/${robot_namespace}/cmd_vel</commandTopic>
+            <torque>50</torque>
+            <broadcastTF>true</broadcastTF>
+            <odometryTopic>/${robot_namespace}/odom</odometryTopic>
+            <odometryFrame>${frame_prefix}_odom</odometryFrame>
+            <covariance_x>0.000100</covariance_x>
+            <covariance_y>0.000100</covariance_y>
+            <covariance_yaw>0.010000</covariance_yaw>
+        </plugin>
+    </gazebo>
+
+</robot>

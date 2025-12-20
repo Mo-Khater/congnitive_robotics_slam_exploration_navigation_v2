@@ -1,0 +1,124 @@
+  <?xml version="1.0"?>
+  <launch>
+    <arg name="world_name" default="$(find limo_gazebo_sim)/worlds/map.world"/>
+    <arg name="use_slam" default="true"/>
+    <arg name="use_map_merge" default="true"/>  
+    <arg name="slam_toolbox_config" default="$(find limo_gazebo_sim)/config/slam_toolbox.yaml"/>
+
+    <!-- start gazebo -->
+    <include file="$(find gazebo_ros)/launch/empty_world.launch">
+      <arg name="world_name" value="$(arg world_name)"/>
+      <arg name="paused" value="false"/>
+      <arg name="use_sim_time" value="true"/>
+      <arg name="gui" value="true"/>
+      <arg name="headless" value="false"/>
+    </include>    
+
+    <!-- Robot 1 -->
+    <group ns="robot1">
+      <param name="robot_description"
+            command="$(find xacro)/xacro '$(find limo_description)/urdf/limo_four_diff.xacro' robot_namespace:=/robot1 frame_prefix:=robot1" />
+
+      <node name="spawn_limo_model" pkg="gazebo_ros" type="spawn_model" output="screen"
+            args="-param robot_description -urdf -model limo_robot1 -x 0 -y 0 -z 0 -Y 0" />
+
+      <node name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher" />
+      <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
+
+      <rosparam file="$(find limo_gazebo_sim)/config/limo_four_diff_control.yaml" command="load" ns="/" />
+      <node name="controller_spawner" pkg="controller_manager" type="spawner"
+            respawn="false" output="screen" args="limo_state_controller" />
+
+      <group if="$(arg use_slam)">
+        <node pkg="slam_toolbox" type="async_slam_toolbox_node" name="slam_toolbox" output="screen">
+          <rosparam command="load" file="$(arg slam_toolbox_config)"/>
+          <remap from="/scan" to="/robot1/scan" />
+          <remap from="/map" to="/robot1/map" />
+          
+          <param name="odom_frame" value="robot1_odom"/>
+          <param name="map_frame" value="robot1_map"/>
+          <param name="base_frame" value="robot1_base_footprint"/>
+          <param name="use_map_saver" value="false"/>
+        </node>
+      </group>
+    </group>
+
+    <!-- Robot 2 -->
+    <group ns="robot2">
+      <param name="robot_description"
+            command="$(find xacro)/xacro '$(find limo_description)/urdf/limo_four_diff.xacro' robot_namespace:=/robot2 frame_prefix:=robot2" />
+      
+      <node name="spawn_limo_model" pkg="gazebo_ros" type="spawn_model" output="screen"
+            args="-param robot_description -urdf -model limo_robot2 -x 10 -y 0 -z 0 -Y 0" />
+      
+      <node name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher" />
+      <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
+      
+      <rosparam file="$(find limo_gazebo_sim)/config/limo_four_diff_control.yaml" command="load" ns="/" />
+      <node name="controller_spawner" pkg="controller_manager" type="spawner"
+            respawn="false" output="screen" args="limo_state_controller" />
+
+      <group if="$(arg use_slam)">
+        <node pkg="slam_toolbox" type="async_slam_toolbox_node" name="slam_toolbox" output="screen">
+          <rosparam command="load" file="$(arg slam_toolbox_config)"/>
+          <remap from="/scan" to="/robot2/scan" />
+          <remap from="/map" to="/robot2/map" />
+          
+          <param name="odom_frame" value="robot2_odom"/>
+          <param name="map_frame" value="robot2_map"/>
+          <param name="base_frame" value="robot2_base_footprint"/>
+          <param name="use_map_saver" value="false"/>
+        </node>
+      </group>
+    </group>
+
+    <!-- Robot 3 -->
+    <group ns="robot3">
+      <param name="robot_description"
+            command="$(find xacro)/xacro '$(find limo_description)/urdf/limo_four_diff.xacro' robot_namespace:=/robot3 frame_prefix:=robot3" />
+      
+      <node name="spawn_limo_model" pkg="gazebo_ros" type="spawn_model" output="screen"
+            args="-param robot_description -urdf -model limo_robot3 -x -10 -y 0 -z 0 -Y 0" />
+      
+      <node name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher" />
+      <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
+      
+      <rosparam file="$(find limo_gazebo_sim)/config/limo_four_diff_control.yaml" command="load" ns="/" />
+      <node name="controller_spawner" pkg="controller_manager" type="spawner"
+            respawn="false" output="screen" args="limo_state_controller" />
+
+      <group if="$(arg use_slam)">
+        <node pkg="slam_toolbox" type="async_slam_toolbox_node" name="slam_toolbox" output="screen">
+          <rosparam command="load" file="$(arg slam_toolbox_config)"/>
+          <remap from="/scan" to="/robot3/scan" />
+          <remap from="/map" to="/robot3/map" />
+          
+          <param name="odom_frame" value="robot3_odom"/>
+          <param name="map_frame" value="robot3_map"/>
+          <param name="base_frame" value="robot3_base_footprint"/>
+          <param name="use_map_saver" value="false"/>
+        </node>
+      </group>
+    </group>
+
+    <!-- Static transforms from world to each robot's map frame -->
+    <node pkg="tf" type="static_transform_publisher" name="world_to_robot1_map" 
+          args="0 0 0 0 0 0 world robot1_map 100" />
+    <node pkg="tf" type="static_transform_publisher" name="world_to_robot2_map" 
+          args="10 0 0 0 0 0 world robot2_map 100" />
+    <node pkg="tf" type="static_transform_publisher" name="world_to_robot3_map" 
+          args="-10 0 0 0 0 0 world robot3_map 100" />
+
+    <!-- Custom Map Merger -->
+    <group if="$(arg use_map_merge)">
+      <node pkg="limo_gazebo_sim" type="custom_map_merger.py" name="custom_map_merger" output="screen">
+        <param name="world_frame" value="world"/>
+        <param name="merged_map_topic" value="merged_map"/>
+        <param name="merge_rate" value="2.0"/>
+      </node>
+    </group>
+
+    <!-- RViz -->
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find limo_gazebo_sim)/rviz/rviz_config.rviz" />
+
+  </launch>

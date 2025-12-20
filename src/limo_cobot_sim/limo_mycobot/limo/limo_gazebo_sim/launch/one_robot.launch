@@ -1,0 +1,71 @@
+<?xml version="1.0"?>
+<launch>
+    <arg name="robot1_ns" default="robot1"/>
+    <arg name="robot2_ns" default="robot2"/>
+    <arg name="robot3_ns" default="robot3"/>
+
+
+    <arg name="world_name" default="$(find limo_gazebo_sim)/worlds/demo.world"/>
+
+    <include file="$(find gazebo_ros)/launch/empty_world.launch">
+        <arg name="world_name" value="$(arg world_name)"/>
+        <arg name="paused" value="false"/>
+        <arg name="use_sim_time" value="true"/>
+        <arg name="gui" value="true"/>
+    </include>
+        <!-- Robot description -->
+    <param name="robot_description" command="$(find xacro)/xacro '$(find limo_description)/urdf/limo_four_diff.xacro'
+        robot_namespace:=" />
+
+    <group ns="$(arg robot1_ns)">
+        <param name="tf_prefix" value="$(arg robot1_ns)_tf"/>  
+        <rosparam file="$(find limo_gazebo_sim)/config/limo_four_diff_control.yaml" command="load"/>
+        <node name="spawn_limo_model" pkg="gazebo_ros" type="spawn_model" args="-x 0
+                    -y 0
+                    -z 0
+                    -Y 0
+                    -unpause
+                    -urdf
+                    -param /robot_description
+                    -model $(arg robot1_ns)" />
+
+
+        <!-- load the controllers -->
+        <node name="controller_spawner" pkg="controller_manager" type="spawner"
+            respawn="false" output="screen" args="limo_state_controller "/>
+        <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
+    </group>
+
+<group ns="$(arg robot2_ns)">
+    <param name="tf_prefix" value="$(arg robot2_ns)_tf"/>
+    <rosparam file="$(find limo_gazebo_sim)/config/limo_four_diff_control.yaml" command="load"/>
+    <node name="spawn_limo_model" pkg="gazebo_ros" type="spawn_model" args="-x 3
+                -y 0
+                -z 0
+                -Y 0
+                -unpause
+                -urdf
+                -param /robot_description
+                -model $(arg robot2_ns)" />
+
+
+    <!-- load the controllers -->
+    <node name="controller_spawner" pkg="controller_manager" type="spawner"
+        respawn="false" output="screen" args="limo_state_controller "/>
+
+    <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
+</group>
+<group ns="$(arg robot3_ns)">
+        <param name="tf_prefix" value="$(arg robot3_ns)_tf"/>
+        <rosparam file="$(find limo_gazebo_sim)/config/limo_four_diff_control.yaml" command="load"/>
+        <node pkg="gazebo_ros" type="spawn_model" name="spawn_limo_model"
+              args="-x 6 -y 0 -z 0 -Y 0 -unpause -urdf -param /robot_description -model $(arg robot3_ns)"/>
+          <!-- load the controllers -->
+    <node name="controller_spawner" pkg="controller_manager" type="spawner"
+        respawn="false" output="screen" args="limo_state_controller "/>
+
+    <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
+    </group>
+    <!-- initial pose -->
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find limo_description)/rviz/display_total.rviz" />
+</launch>

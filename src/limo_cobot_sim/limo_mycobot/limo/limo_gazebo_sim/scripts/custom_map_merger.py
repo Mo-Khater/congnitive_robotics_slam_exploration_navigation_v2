@@ -23,6 +23,10 @@ class CustomMapMerger:
         # Storage for received maps
         self.robot_maps = {}
         
+        # Track which robots have published at least once
+        self.robots_received = set()
+        self.all_robots_received = False
+        
         # TF buffer and listener
         self.tf_buffer = tf2_ros.Buffer(rospy.Duration(30.0))
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
@@ -47,11 +51,23 @@ class CustomMapMerger:
         )
         
         rospy.loginfo("Custom Map Merger initialized")
+        rospy.loginfo(f"Waiting for maps from: {', '.join(self.robots)}")
     
     def map_callback(self, msg, robot_name):
         """Store received map from robot"""
         self.robot_maps[robot_name] = msg
-        rospy.loginfo_throttle(5.0, f"Received map from {robot_name}: {msg.info.width}x{msg.info.height}")
+        
+        # Track that this robot has published
+        if robot_name not in self.robots_received:
+            self.robots_received.add(robot_name)
+            rospy.loginfo(f"First map received from {robot_name} ({len(self.robots_received)}/{len(self.robots)})")
+            
+            # Check if all robots have now published
+            if len(self.robots_received) == len(self.robots):
+                self.all_robots_received = True
+                rospy.loginfo("All robots have published their maps! Starting merge process.")
+        else:
+            rospy.loginfo_throttle(5.0, f"Updated map from {robot_name}: {msg.info.width}x{msg.info.height}")
     
     def get_transform(self, target_frame, source_frame):
         """Get transform from TF tree"""
@@ -95,6 +111,12 @@ class CustomMapMerger:
     
     def merge_and_publish(self, event):
         """Merge all robot maps and publish"""
+        # Wait until all robots have published at least once
+        if not self.all_robots_received:
+            missing_robots = set(self.robots) - self.robots_received
+            rospy.logwarn_throttle(5.0, f"Waiting for maps from: {', '.join(missing_robots)}")
+            return
+        
         if len(self.robot_maps) == 0:
             rospy.logwarn_throttle(5.0, "No maps received yet")
             return

@@ -117,7 +117,7 @@ class FrontierExplorer:
                 self.retry_attempts[goal_key] += 1
                 
                 # If failed 3+ times, mark as permanently failed
-                if self.retry_attempts[goal_key] >= 3:
+                if self.retry_attempts[goal_key] >= 4:
                     if goal_pos not in self.permanently_failed_goals:
                         self.permanently_failed_goals.append(goal_pos)
                         rospy.logerr(f"🚫 Permanently failed (3+ attempts) at ({goal_pos[0]:.2f}, {goal_pos[1]:.2f})")

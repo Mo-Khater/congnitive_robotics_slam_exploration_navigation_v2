@@ -24,22 +24,45 @@ class Detector:
     def __init__(self, robot_name):
         self.robot_name = robot_name
         self.bridge = CvBridge()
+        self.goal_found = False  # Track if we already found it
+        
         script_dir = os.path.dirname(os.path.abspath(__file__))
         ref_path = os.path.join(script_dir, '..', 'images', 'blue_ball.jpg')
         ref_img = cv2.imread(ref_path)
         if ref_img is not None:
             ref_img = cv2.resize(ref_img, (100,100))
             self.ref_features = extract_features(ref_img)
+            rospy.loginfo(f"{robot_name}: 🔍 Detector initialized - searching for goal...")
         else:
             self.ref_features = None
+            rospy.logerr(f"{robot_name}: ❌ Failed to load reference image!")
+            
         rospy.Subscriber(f"/{robot_name}/color/image_raw", Image, self.cb)
         self.pub = rospy.Publisher(f"/{robot_name}/goal_detected", Bool, queue_size=1)
         self.sim_pub = rospy.Publisher(f"/{robot_name}/goal_similarity", Float32, queue_size=1)
         self.th = 0.5
 
+    def print_victory_message(self, similarity):
+        """Print an epic victory message!"""
+        rospy.logwarn("\n" + "="*80)
+        rospy.logwarn("██████╗  ██████╗  █████╗ ██╗         ███████╗ ██████╗ ██╗   ██╗███████╗██████╗ ")
+        rospy.logwarn("██╔════╝ ██╔═══██╗██╔══██╗██║         ██╔════╝██╔═══██╗██║   ██║██╔════╝██╔══██╗")
+        rospy.logwarn("██║  ███╗██║   ██║███████║██║         █████╗  ██║   ██║██║   ██║█████╗  ██║  ██║")
+        rospy.logwarn("██║   ██║██║   ██║██╔══██║██║         ██╔══╝  ██║   ██║██║   ██║██╔══╝  ██║  ██║")
+        rospy.logwarn("╚██████╔╝╚██████╔╝██║  ██║███████╗    ██║     ╚██████╔╝╚██████╔╝███████╗██████╔╝")
+        rospy.logwarn(" ╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚══════╝    ╚═╝      ╚═════╝  ╚═════╝ ╚══════╝╚═════╝ ")
+        rospy.logwarn("="*80)
+        rospy.logwarn(f"🎉🎉🎉 {self.robot_name.upper()} SUCCESSFULLY FOUND THE GOAL! 🎉🎉🎉")
+        rospy.logwarn(f"✨ Confidence Score: {similarity:.3f}")
+        rospy.logwarn(f"🤖 Robot: {self.robot_name}")
+        rospy.logwarn(f"⏰ Time: {rospy.Time.now().to_sec():.2f}s since start")
+        rospy.logwarn("🏆 MISSION ACCOMPLISHED! 🏆")
+        rospy.logwarn("="*80 + "\n")
+
     def cb(self, msg):
         if self.ref_features is None:
             return
+            
         img = self.bridge.imgmsg_to_cv2(msg, "bgr8")
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         lower = np.array([90, 50, 50])
@@ -65,11 +88,18 @@ class Detector:
         m = max(sims) if sims else 0
         scaled = min(1.0, m * 10000)
         self.sim_pub.publish(float(scaled))
-        self.pub.publish(scaled > self.th)
+        
+        detected = scaled > self.th
+        self.pub.publish(detected)
+        
+        # Print victory message once when first detected
+        if detected and not self.goal_found:
+            self.goal_found = True
+            self.print_victory_message(scaled)
 
 def main():
     rospy.init_node("det", anonymous=True)
-    robot_name = rospy.get_param('~robot_name', 'limo_1')
+    robot_name = rospy.get_param('~robot_name', 'robot1')
     Detector(robot_name)
     rospy.spin()
 
