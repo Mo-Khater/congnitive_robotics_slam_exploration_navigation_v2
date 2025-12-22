@@ -16,98 +16,12 @@
     <arg name="world_name" value="$(arg world_name)"/>
     <arg name="paused" value="false"/>
     <arg name="use_sim_time" value="true"/>
-    <arg name="gui" value="true"/>
+    <arg name="gui" value="false"/>
     <arg name="headless" value="false"/>
+    <arg name="verbose" value="false"/>
+    <arg name="debug" value="false"/>
   </include>   
 
-  <!-- Robot 1 -->
-  <group ns="robot1">
-    <param name="robot_description"
-          command="$(find xacro)/xacro '$(find limo_description)/urdf/limo_four_diff.xacro' robot_namespace:=/robot1 frame_prefix:=robot1" />
-
-    <node name="spawn_limo_model" pkg="gazebo_ros" type="spawn_model" output="screen"
-          args="-param robot_description -urdf -model limo_robot1 -x 0 -y 0 -z 0 -Y 0" />
-
-    <node name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher" />
-    <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
-
-    <rosparam file="$(find limo_gazebo_sim)/config/limo_four_diff_control.yaml" command="load" ns="/" />
-    <node name="controller_spawner" pkg="controller_manager" type="spawner"
-          respawn="false" output="screen" args="limo_state_controller" />
-
-    <!-- SLAM -->
-    <group if="$(arg use_slam)">
-      <node pkg="slam_toolbox" type="async_slam_toolbox_node" name="slam_toolbox" output="screen">
-        <rosparam command="load" file="$(arg slam_toolbox_config)"/>
-        <remap from="/scan" to="/robot1/scan" />
-        <remap from="/map" to="/robot1/map" />
-        
-        <param name="odom_frame" value="robot1_odom"/>
-        <param name="map_frame" value="robot1_map"/>
-        <param name="base_frame" value="robot1_base_footprint"/>
-        <param name="use_map_saver" value="false"/>
-      </node>
-    </group>
-
-    <!-- Navigation Scripts -->
-    <group if="$(arg use_navigation)">
-      <!-- Pose Tracker -->
-      <node name="pose_tracker" pkg="limo_gazebo_sim" type="pose_tracker.py" output="screen"/>
-
-      <!-- Global Planner (A*) -->
-      <node name="global_planner" pkg="limo_gazebo_sim" type="global_planner.py" output="screen"/>
-
-      <!-- Local Planner (DWA) -->
-      <node name="local_planner" pkg="limo_gazebo_sim" type="local_planner.py" output="screen">
-        <param name="max_vel_x" value="0.5"/>
-        <param name="min_vel_x" value="-0.2"/>
-        <param name="max_vel_theta" value="1.0"/>
-        <param name="max_acc_x" value="0.5"/>
-        <param name="max_acc_theta" value="1.0"/>
-        <param name="v_resolution" value="0.05"/>
-        <param name="w_resolution" value="0.1"/>
-        <param name="dt" value="0.2"/>
-        <param name="predict_time" value="2.0"/>
-        <param name="robot_radius" value="0.2"/>
-        <param name="goal_cost_weight" value="1.0"/>
-        <param name="speed_cost_weight" value="0.5"/>
-        <param name="obstacle_cost_weight" value="2.0"/>
-      </node>
-
-      <!-- Costmap Generator -->
-      <node name="costmap_generator" pkg="limo_gazebo_sim" type="costmap_generator.py" output="screen">
-        <param name="inflation_radius" value="0.5"/>
-        <param name="cost_scaling_factor" value="10.0"/>
-        <param name="inscribed_radius" value="0.2"/>
-      </node>
-
-      <!-- Goal Manager -->
-      <node name="goal_manager" pkg="limo_gazebo_sim" type="goal_manager.py" output="screen">
-        <param name="goal_tolerance_xy" value="0.2"/>
-        <param name="goal_tolerance_yaw" value="0.2"/>
-        <param name="max_goal_time" value="60.0"/>
-      </node>
-
-      <!-- Obstacle Detector -->
-      <node name="obstacle_detector" pkg="limo_gazebo_sim" type="obstacle_detector.py" output="screen">
-        <param name="cluster_distance" value="0.3"/>
-        <param name="min_cluster_size" value="3"/>
-        <param name="max_range" value="5.0"/>
-      </node>
-
-      <!-- Goal Detection -->
-      <include file="$(find limo_gazebo_sim)/launch/goal_detection.launch"/>
-    </group>
-
-    <!-- Exploration -->
-    <group if="$(arg use_exploration)">
-      <node name="frontier_explorer" pkg="limo_gazebo_sim" type="frontier_explorer.py" output="screen">
-        <param name="min_frontier_size" value="10"/>
-        <param name="frontier_travel_point" value="0.5"/>
-        <param name="exploration_rate" value="3.0"/>
-      </node>
-    </group>
-  </group>
   <!-- Robot 2 -->
   <group ns="robot2">
     <param name="robot_description"

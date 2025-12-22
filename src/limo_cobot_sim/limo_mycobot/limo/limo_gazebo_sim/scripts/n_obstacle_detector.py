@@ -108,7 +108,7 @@ class ObstacleDetector:
         
         for i, obstacle in enumerate(obstacles):
             marker = Marker()
-            marker.header.frame_id = "limo_base_link"
+            marker.header.frame_id = "base_link"
             marker.header.stamp = rospy.Time.now()
             marker.ns = "obstacles"
             marker.id = i

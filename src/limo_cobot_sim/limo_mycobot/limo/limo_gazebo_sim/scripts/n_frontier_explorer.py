@@ -10,7 +10,7 @@ import tf2_ros
 from tf2_geometry_msgs import do_transform_pose
 
 class FrontierExplorer:
-    """Frontier-based exploration with smart retry logic"""
+    """Frontier-based exploration with aggressive recovery from stuck states"""
     def __init__(self):
         rospy.init_node('frontier_explorer')
         
@@ -25,22 +25,27 @@ class FrontierExplorer:
         # Track explored regions and failed goals
         self.visited_frontiers = []
         self.failed_goals = []
-        self.permanently_failed_goals = []  # Goals that failed multiple times
+        self.permanently_failed_goals = []
         self.visit_radius = 1.5
-        self.failed_goal_radius = 2.0
+        self.failed_goal_radius = 2.5  # Larger radius to avoid problem areas
         self.exploration_history = []
         
         # Track retry attempts
-        self.retry_attempts = {}  # Track how many times each location was tried
+        self.retry_attempts = {}
         
         # Track completion
         self.no_valid_frontier_count = 0
-        self.max_no_frontier_attempts = 5
+        self.max_no_frontier_attempts = 3  # Faster reset
         self.exploration_complete = False
         
         # Track goal timeout
         self.goal_sent_time = None
-        self.max_goal_wait = 45.0  # If no response in 45s, consider it failed
+        self.max_goal_wait = 50.0  # Shorter timeout
+        
+        # Stuck detection - more aggressive
+        self.stuck_cycle_count = 0
+        self.last_frontier_count = 0
+        self.last_available_count = 0
         
         # Coverage tracking
         self.explored_map = None
@@ -49,30 +54,30 @@ class FrontierExplorer:
         self.min_frontier_size = rospy.get_param('~min_frontier_size', 10)
         self.exploration_rate = rospy.get_param('~exploration_rate', 3.0)
         
-        # Exploration strategy parameters
-        self.distance_weight = 0.5
-        self.info_gain_weight = 3.0
-        self.size_weight = 1.0
-        self.novelty_weight = 2.0
+        # More aggressive exploration strategy
+        self.distance_weight = 0.4  # Less weight on distance
+        self.info_gain_weight = 3.5  # Higher info gain
+        self.size_weight = 1.2
+        self.novelty_weight = 2.5  # Much higher novelty preference
         
         # TF
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
         
-        # Subscribers
+        # Subscribers - NO NAMESPACES
         self.map_sub = rospy.Subscriber('/map', OccupancyGrid, self.map_callback)
         self.goal_reached_sub = rospy.Subscriber('/goal_reached', Bool, self.goal_reached_callback)
         self.goal_failed_sub = rospy.Subscriber('/goal_failed', Bool, self.goal_failed_callback)
         
-        # Publishers
+        # Publishers - NO NAMESPACES
         self.goal_pub = rospy.Publisher('/goal', PoseStamped, queue_size=10)
         self.frontier_pub = rospy.Publisher('/frontiers', MarkerArray, queue_size=10)
         
-        # Timer for exploration
+        # Timer
         self.exploration_timer = rospy.Timer(rospy.Duration(self.exploration_rate), 
                                             self.exploration_callback)
         
-        rospy.loginfo("Smart Frontier Explorer initialized with retry logic")
+        rospy.loginfo("Improved Frontier Explorer - Aggressive stuck recovery")
         
     def map_callback(self, msg):
         self.map_data = np.array(msg.data).reshape((msg.info.height, msg.info.width))
@@ -84,7 +89,6 @@ class FrontierExplorer:
         self.explored_map |= (self.map_data != -1)
         
     def goal_reached_callback(self, msg):
-        """Handle successful goal"""
         if msg.data:
             rospy.loginfo("✅ Goal reached successfully")
             self.goal_active = False
@@ -99,48 +103,43 @@ class FrontierExplorer:
             
             self.current_goal = None
             self.goal_sent_time = None
+            self.stuck_cycle_count = 0  # Reset on success
     
     def goal_failed_callback(self, msg):
-        """Handle failed goal with retry tracking"""
         if msg.data:
-            rospy.logwarn("❌ Goal failed - will avoid this area")
+            rospy.logwarn("❌ Goal failed")
             self.goal_active = False
             
             if self.current_goal is not None:
                 goal_pos = (self.current_goal.pose.position.x,
                            self.current_goal.pose.position.y)
                 
-                # Track retry attempts
                 goal_key = f"{goal_pos[0]:.1f},{goal_pos[1]:.1f}"
                 if goal_key not in self.retry_attempts:
                     self.retry_attempts[goal_key] = 0
                 self.retry_attempts[goal_key] += 1
                 
-                # If failed 3+ times, mark as permanently failed
-                if self.retry_attempts[goal_key] >= 3:
+                # Faster permanent failure - 2 attempts instead of 3
+                if self.retry_attempts[goal_key] >= 2:
                     if goal_pos not in self.permanently_failed_goals:
                         self.permanently_failed_goals.append(goal_pos)
-                        rospy.logerr(f"🚫 Permanently failed (3+ attempts) at ({goal_pos[0]:.2f}, {goal_pos[1]:.2f})")
+                        rospy.logerr(f"🚫 Permanently failed at ({goal_pos[0]:.2f}, {goal_pos[1]:.2f})")
                 else:
-                    # Otherwise just add to regular failed list
                     self.failed_goals.append(goal_pos)
-                    rospy.logwarn(f"   Failed goal at ({goal_pos[0]:.2f}, {goal_pos[1]:.2f}) "
-                                f"(attempt {self.retry_attempts[goal_key]})")
+                    rospy.logwarn(f"Failed attempt {self.retry_attempts[goal_key]}")
                 
-                # Keep failed list manageable
-                if len(self.failed_goals) > 15:
+                if len(self.failed_goals) > 10:
                     self.failed_goals.pop(0)
             
             self.current_goal = None
             self.goal_sent_time = None
         
     def get_robot_pose(self):
-        """Get current robot pose"""
         try:
-            trans = self.tf_buffer.lookup_transform('limo_map', 'limo_base_link', 
+            trans = self.tf_buffer.lookup_transform('map', 'base_link', 
                                                    rospy.Time(0), rospy.Duration(1.0))
             pose = PoseStamped()
-            pose.header.frame_id = 'limo_map'
+            pose.header.frame_id = 'map'
             pose.header.stamp = rospy.Time.now()
             pose.pose.position.x = trans.transform.translation.x
             pose.pose.position.y = trans.transform.translation.y
@@ -195,8 +194,8 @@ class FrontierExplorer:
             return []
             
         height, width = self.map_data.shape
-        
         frontier_map = np.zeros((height, width), dtype=bool)
+        
         for y in range(1, height - 1):
             for x in range(1, width - 1):
                 if self.is_frontier_cell(x, y):
@@ -224,25 +223,20 @@ class FrontierExplorer:
         
     def is_frontier_visited(self, frontier):
         fx, fy = frontier['centroid']
-        
         for visited_x, visited_y in self.visited_frontiers:
             dist = np.sqrt((fx - visited_x)**2 + (fy - visited_y)**2)
             if dist < self.visit_radius:
                 return True
-        
         return False
     
     def is_near_failed_goal(self, frontier):
-        """Check if frontier is near a failed goal"""
         fx, fy = frontier['centroid']
         
-        # Check permanently failed goals first
         for failed_x, failed_y in self.permanently_failed_goals:
             dist = np.sqrt((fx - failed_x)**2 + (fy - failed_y)**2)
             if dist < self.failed_goal_radius:
                 return True
         
-        # Then check regular failed goals
         for failed_x, failed_y in self.failed_goals:
             dist = np.sqrt((fx - failed_x)**2 + (fy - failed_y)**2)
             if dist < self.failed_goal_radius:
@@ -261,7 +255,8 @@ class FrontierExplorer:
             dist = np.sqrt((fx - hist_x)**2 + (fy - hist_y)**2)
             min_dist = min(min_dist, dist)
         
-        novelty = 1.0 / (1.0 + np.exp(-0.5 * (min_dist - 2.0)))
+        # More aggressive novelty scoring
+        novelty = 1.0 / (1.0 + np.exp(-0.8 * (min_dist - 1.5)))
         return novelty
         
     def calculate_information_gain(self, frontier, robot_pose):
@@ -271,15 +266,9 @@ class FrontierExplorer:
         cx, cy = frontier['centroid']
         mx, my = self.world_to_map(cx, cy)
         
-        rx = robot_pose.pose.position.x
-        ry = robot_pose.pose.position.y
-        
-        direction_angle = np.arctan2(cy - ry, cx - rx)
-        
         search_radius = 40
         unknown_count = 0
         total_count = 0
-        known_free_count = 0
         
         for dy in range(-search_radius, search_radius + 1):
             for dx in range(-search_radius, search_radius + 1):
@@ -290,30 +279,14 @@ class FrontierExplorer:
                 nx, ny = mx + dx, my + dy
                 if (0 <= nx < self.map_info.width and 
                     0 <= ny < self.map_info.height):
-                    
-                    angle_to_cell = np.arctan2(dy, dx)
-                    angle_diff = abs(np.arctan2(np.sin(angle_to_cell - direction_angle), 
-                                                 np.cos(angle_to_cell - direction_angle)))
-                    
-                    if angle_diff < np.pi / 1.5:
-                        weight = 1.0 if angle_diff < np.pi / 3 else 0.5
-                        total_count += weight
-                        
-                        cell_val = self.map_data[ny, nx]
-                        if cell_val == -1:
-                            unknown_count += weight
-                        elif cell_val == 0:
-                            known_free_count += weight
+                    total_count += 1
+                    if self.map_data[ny, nx] == -1:
+                        unknown_count += 1
         
         if total_count < 10:
             return 0.0
         
         info_gain = unknown_count / total_count
-        
-        free_ratio = known_free_count / total_count
-        if free_ratio > 0.7:
-            info_gain *= 0.3
-        
         size_boost = min(1.5, 1.0 + frontier['size'] / 100.0)
         
         return info_gain * size_boost
@@ -324,14 +297,13 @@ class FrontierExplorer:
         ry = robot_pose.pose.position.y
         
         distance = np.sqrt((fx - rx)**2 + (fy - ry)**2)
-        
         info_gain = self.calculate_information_gain(frontier, robot_pose)
         novelty = self.calculate_novelty_score(frontier, robot_pose)
         
-        if info_gain < 0.1:
+        if info_gain < 0.08:
             return float('inf')
         
-        max_reasonable_dist = 8.0
+        max_reasonable_dist = 10.0
         normalized_dist = min(1.0, distance / max_reasonable_dist)
         normalized_size = min(1.0, frontier['size'] / 100.0)
         
@@ -380,7 +352,7 @@ class FrontierExplorer:
         for i, finfo in enumerate(frontier_info[:3]):
             rospy.loginfo(
                 f"  #{i+1}: dist={finfo['distance']:.2f}m, "
-                f"size={finfo['frontier']['size']}, "
+                f"novelty={finfo['novelty']:.2f}, "
                 f"info={finfo['info_gain']:.2f}"
             )
         rospy.loginfo("="*60)
@@ -394,7 +366,7 @@ class FrontierExplorer:
         best_x, best_y = mx, my
         best_dist = float('inf')
         
-        search_radius = 20
+        search_radius = 25  # Larger search for safer approach
         for dy in range(-search_radius, search_radius + 1):
             for dx in range(-search_radius, search_radius + 1):
                 nx, ny = mx + dx, my + dy
@@ -414,11 +386,8 @@ class FrontierExplorer:
         marker_array = MarkerArray()
         
         for i, frontier in enumerate(frontiers):
-            info_gain = self.calculate_information_gain(frontier, robot_pose)
-            novelty = self.calculate_novelty_score(frontier, robot_pose)
-            
             marker = Marker()
-            marker.header.frame_id = "limo_map"
+            marker.header.frame_id = "map"  # Changed from robot1_map
             marker.header.stamp = rospy.Time.now()
             marker.ns = "frontiers"
             marker.id = i
@@ -430,14 +399,12 @@ class FrontierExplorer:
             marker.pose.position.z = 0.0
             marker.pose.orientation.w = 1.0
             
-            value_score = info_gain * novelty
-            scale = 0.2 + 0.3 * min(1.0, value_score)
-            marker.scale.x = scale
-            marker.scale.y = scale
-            marker.scale.z = scale
+            marker.scale.x = 0.3
+            marker.scale.y = 0.3
+            marker.scale.z = 0.3
             
-            marker.color.r = 1.0 - value_score
-            marker.color.g = value_score
+            marker.color.r = 0.0
+            marker.color.g = 1.0
             marker.color.b = 0.0
             marker.color.a = 0.8
             
@@ -455,40 +422,7 @@ class FrontierExplorer:
         
         return unknown_ratio < 0.03
     
-    def clear_failed_goals_for_frontiers(self, frontiers):
-        """Clear ONLY regular failed goals (not permanent) when retrying frontiers"""
-        if len(frontiers) == 0 or len(self.failed_goals) == 0:
-            return
-        
-        cleared_count = 0
-        new_failed_goals = []
-        
-        for failed_x, failed_y in self.failed_goals:
-            should_keep = True
-            
-            # Check if this failed goal blocks an available frontier
-            for frontier in frontiers:
-                fx, fy = frontier['centroid']
-                dist = np.sqrt((fx - failed_x)**2 + (fy - failed_y)**2)
-                
-                if dist < self.failed_goal_radius:
-                    # Clear this failed goal to give it another chance
-                    should_keep = False
-                    cleared_count += 1
-                    rospy.loginfo(f"🔄 Clearing failed goal at ({failed_x:.2f}, {failed_y:.2f}) "
-                                f"to retry frontier at ({fx:.2f}, {fy:.2f})")
-                    break
-            
-            if should_keep:
-                new_failed_goals.append((failed_x, failed_y))
-        
-        if cleared_count > 0:
-            self.failed_goals = new_failed_goals
-            rospy.loginfo(f"✨ Cleared {cleared_count} failed goals to retry available frontiers")
-            rospy.loginfo(f"   ({len(self.permanently_failed_goals)} remain permanently failed after 3+ attempts)")
-        
     def exploration_callback(self, event):
-        """Main exploration loop"""
         # Wait for initial map
         if (rospy.Time.now() - self.start_time).to_sec() < self.initial_delay:
             remaining = self.initial_delay - (rospy.Time.now() - self.start_time).to_sec()
@@ -506,14 +440,13 @@ class FrontierExplorer:
         if robot_pose is None:
             return
         
-        # CHECK: Has goal timed out without response?
+        # CHECK GOAL TIMEOUT
         if self.goal_active and self.goal_sent_time is not None:
             wait_time = (rospy.Time.now() - self.goal_sent_time).to_sec()
             if wait_time > self.max_goal_wait:
-                rospy.logerr(f"⏱️ Goal timeout - no response in {wait_time:.1f}s, assuming failed")
+                rospy.logwarn(f"⏱️ Goal timeout (backup check)")
                 self.goal_active = False
                 
-                # Mark as failed
                 if self.current_goal is not None:
                     goal_pos = (self.current_goal.pose.position.x,
                                self.current_goal.pose.position.y)
@@ -531,11 +464,10 @@ class FrontierExplorer:
                 self.current_goal = None
                 self.goal_sent_time = None
         
-        # Wait if goal still active
         if self.goal_active:
             return
             
-        # Find frontiers
+        # FIND FRONTIERS
         frontiers = self.find_frontiers()
         
         if len(frontiers) == 0:
@@ -548,119 +480,85 @@ class FrontierExplorer:
                     rospy.loginfo("="*70)
                     self.exploration_complete = True
                 else:
-                    rospy.logwarn("Clearing visited history")
+                    rospy.logwarn("No frontiers - clearing all history")
                     self.visited_frontiers.clear()
+                    self.failed_goals.clear()
                     self.no_valid_frontier_count = 0
             return
         
         self.no_valid_frontier_count = 0
         
-        # Filter frontiers - first pass (only check visited)
+        # FILTER FRONTIERS
         unvisited = [f for f in frontiers if not self.is_frontier_visited(f)]
+        available = [f for f in unvisited if not self.is_near_failed_goal(f)]
         
-        # Check how many would be blocked by failed goals
-        available_after_failed_filter = [f for f in unvisited if not self.is_near_failed_goal(f)]
-        blocked_by_failed = [f for f in unvisited if self.is_near_failed_goal(f)]
+        # DETECT STUCK STATE
+        if len(available) == self.last_available_count and len(frontiers) == self.last_frontier_count:
+            self.stuck_cycle_count += 1
+        else:
+            self.stuck_cycle_count = 0
         
-        # Debug: Show what's happening
-        rospy.loginfo_throttle(5.0, f"Filter status: {len(unvisited)} unvisited, "
-                              f"{len(available_after_failed_filter)} after failed filter, "
-                              f"{len(blocked_by_failed)} blocked by failed goals, "
-                              f"{len(self.permanently_failed_goals)} permanently failed")
+        self.last_available_count = len(available)
+        self.last_frontier_count = len(frontiers)
         
-        # KEY LOGIC: If we have few available frontiers and some are blocked by failed goals, clear them
-        if len(blocked_by_failed) > 0 and len(available_after_failed_filter) <= 3:
-            rospy.logwarn("="*70)
-            rospy.logwarn(f"🔍 Only {len(available_after_failed_filter)} available frontiers, "
-                         f"but {len(blocked_by_failed)} more are blocked by failed goals!")
-            rospy.logwarn(f"🔄 Clearing {len(blocked_by_failed)} failed goals to give them another try...")
-            rospy.logwarn("   (They will be marked failed again only if they fail after retry)")
-            rospy.logwarn("="*70)
+        # AGGRESSIVE RECOVERY FROM STUCK STATE
+        if self.stuck_cycle_count >= 2:  # Stuck for 2 cycles (6 seconds)
+            rospy.logerr("="*70)
+            rospy.logerr(f"🚨 STUCK DETECTED - Same {len(available)} frontiers for {self.stuck_cycle_count} cycles!")
+            rospy.logerr("💥 NUCLEAR RESET - Clearing ALL failed goals")
+            rospy.logerr("="*70)
             
-            # Clear the failed goals that block these frontiers
-            self.clear_failed_goals_for_frontiers(blocked_by_failed)
-            
-            # Recalculate available frontiers
-            available_after_failed_filter = [f for f in unvisited if not self.is_near_failed_goal(f)]
-            rospy.loginfo(f"✅ After clearing: {len(available_after_failed_filter)} frontiers now available")
-        
-        unvisited = available_after_failed_filter
-        
-        # If still no unvisited, clear visited history
-        if len(unvisited) == 0:
-            rospy.logwarn(f"All frontiers visited - clearing history")
+            # Clear everything except permanent failures
+            self.failed_goals.clear()
             self.visited_frontiers.clear()
-            unvisited = [f for f in frontiers if not self.is_near_failed_goal(f)]
+            self.stuck_cycle_count = 0
+            self.retry_attempts.clear()
             
-            # If STILL nothing, clear failed goals too
-            if len(unvisited) == 0:
-                rospy.logwarn("All near failed goals - clearing failed list completely")
-                self.failed_goals.clear()
-                unvisited = [f for f in frontiers if not self.is_near_permanently_failed(f)]
+            # Recalculate available
+            available = [f for f in unvisited if not self.is_near_permanently_failed(f)]
+            rospy.logwarn(f"✅ After nuclear reset: {len(available)} frontiers now available")
+        
+        # If still very few options, clear visited too
+        if len(available) <= 2 and len(unvisited) > 3:
+            rospy.logwarn("Very few available - clearing visited history")
+            self.visited_frontiers.clear()
+            available = [f for f in frontiers if not self.is_near_failed_goal(f)]
+        
+        # Last resort - ignore all failures
+        if len(available) == 0:
+            rospy.logerr("NO AVAILABLE FRONTIERS - Ignoring all failures!")
+            self.failed_goals.clear()
+            available = [f for f in unvisited if not self.is_near_permanently_failed(f)]
             
-        rospy.loginfo(f"📊 Frontiers: {len(frontiers)} total, {len(unvisited)} available after filtering, "
+            if len(available) == 0:
+                rospy.logerr("Still nothing - clearing permanent failures too!")
+                self.permanently_failed_goals.clear()
+                available = frontiers
+        
+        rospy.loginfo(f"📊 Frontiers: {len(frontiers)} total, {len(available)} available after filtering, "
                      f"{len(self.failed_goals)} failed areas (retryable), "
                      f"{len(self.permanently_failed_goals)} permanently failed (3+ attempts), "
                      f"{len(self.visited_frontiers)} visited")
         
-        # ADDITIONAL CHECK: If we keep seeing the same low number, be more aggressive
-        if not hasattr(self, 'low_frontier_count'):
-            self.low_frontier_count = 0
-            self.last_available_count = 0
+        self.publish_frontiers_markers(available, robot_pose)
         
-        if len(unvisited) > 0 and len(unvisited) <= 3 and len(self.failed_goals) > 3:
-            if len(unvisited) == self.last_available_count:
-                self.low_frontier_count += 1
-            else:
-                self.low_frontier_count = 0
-            self.last_available_count = len(unvisited)
-            
-            # If stuck with few options for multiple cycles, clear oldest failed goals
-            if self.low_frontier_count >= 3:
-                rospy.logwarn("="*70)
-                rospy.logwarn(f"⚠️ Stuck with only {len(unvisited)} frontiers for {self.low_frontier_count} cycles")
-                rospy.logwarn(f"🧹 Clearing oldest 50% of failed goals to free up options")
-                rospy.logwarn("="*70)
-                
-                # Keep only the most recent half of failed goals
-                keep_count = max(2, len(self.failed_goals) // 2)
-                old_count = len(self.failed_goals)
-                self.failed_goals = self.failed_goals[-keep_count:]
-                rospy.loginfo(f"Reduced failed goals from {old_count} to {len(self.failed_goals)}")
-                
-                # Recalculate available
-                unvisited = [f for f in frontiers if not self.is_frontier_visited(f) 
-                            and not self.is_near_failed_goal(f)]
-                rospy.loginfo(f"✅ Now have {len(unvisited)} available frontiers")
-                
-                self.low_frontier_count = 0
-        else:
-            self.low_frontier_count = 0
-        
-        # Publish markers
-        self.publish_frontiers_markers(unvisited, robot_pose)
-        
-        # Select best
-        best_frontier = self.select_best_frontier(unvisited, robot_pose)
+        # SELECT BEST
+        best_frontier = self.select_best_frontier(available, robot_pose)
         
         if best_frontier is None:
             self.no_valid_frontier_count += 1
-            
             if self.no_valid_frontier_count >= self.max_no_frontier_attempts:
                 if self.check_exploration_complete():
-                    rospy.loginfo("="*70)
-                    rospy.loginfo("🎉 EXPLORATION COMPLETE!")
-                    rospy.loginfo("="*70)
                     self.exploration_complete = True
             return
         
         self.no_valid_frontier_count = 0
             
-        # Create and send goal
+        # SEND GOAL
         approach_x, approach_y = self.get_approach_point(best_frontier)
         
         goal = PoseStamped()
-        goal.header.frame_id = "limo_map"
+        goal.header.frame_id = "map"  # Changed from robot1_map
         goal.header.stamp = rospy.Time.now()
         goal.pose.position.x = approach_x
         goal.pose.position.y = approach_y
@@ -668,20 +566,17 @@ class FrontierExplorer:
         
         self.current_goal = goal
         self.goal_active = True
-        self.goal_sent_time = rospy.Time.now()  # Track when we sent it
+        self.goal_sent_time = rospy.Time.now()
         self.goal_pub.publish(goal)
         
         rospy.loginfo(f"🎯 NEW GOAL: ({approach_x:.2f}, {approach_y:.2f})")
     
     def is_near_permanently_failed(self, frontier):
-        """Check only permanently failed goals"""
         fx, fy = frontier['centroid']
-        
         for failed_x, failed_y in self.permanently_failed_goals:
             dist = np.sqrt((fx - failed_x)**2 + (fy - failed_y)**2)
             if dist < self.failed_goal_radius:
                 return True
-        
         return False
         
     def run(self):

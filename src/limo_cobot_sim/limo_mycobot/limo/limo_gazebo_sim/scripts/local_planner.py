@@ -9,31 +9,31 @@ import tf2_ros
 import tf2_geometry_msgs
 
 class DWAPlanner:
-    """Improved DWA: Faster, smarter door navigation"""
+    """Conservative DWA: Slower, safer, more reliable navigation"""
     def __init__(self):
         rospy.init_node('local_planner')
         
-        # Robot parameters - Balanced: Fast but accurate
-        self.max_vel_x = rospy.get_param('~max_vel_x', 0.65)  # Moderate speed
-        self.min_vel_x = rospy.get_param('~min_vel_x', -0.25)
-        self.max_vel_theta = rospy.get_param('~max_vel_theta', 1.2)  # Moderate rotation
-        self.max_acc_x = rospy.get_param('~max_acc_x', 0.6)  # Smooth acceleration
-        self.max_acc_theta = rospy.get_param('~max_acc_theta', 1.2)
-        self.v_resolution = rospy.get_param('~v_resolution', 0.1)  # Finer resolution
-        self.w_resolution = rospy.get_param('~w_resolution', 0.15)  # Finer resolution
-        self.dt = rospy.get_param('~dt', 0.2)
-        self.predict_time = rospy.get_param('~predict_time', 1.5)
-        self.robot_radius = rospy.get_param('~robot_radius', 0.15)
+        # Robot parameters - CONSERVATIVE: Slow and steady
+        self.max_vel_x = rospy.get_param('~max_vel_x', 0.45)  # Much slower
+        self.min_vel_x = rospy.get_param('~min_vel_x', -0.15)
+        self.max_vel_theta = rospy.get_param('~max_vel_theta', 0.8)  # Slower rotation
+        self.max_acc_x = rospy.get_param('~max_acc_x', 0.4)  # Gentler acceleration
+        self.max_acc_theta = rospy.get_param('~max_acc_theta', 0.8)
+        self.v_resolution = rospy.get_param('~v_resolution', 0.08)  # Finer control
+        self.w_resolution = rospy.get_param('~w_resolution', 0.12)
+        self.dt = rospy.get_param('~dt', 0.25)  # Longer timestep for smoother predictions
+        self.predict_time = rospy.get_param('~predict_time', 2.0)  # Look further ahead
+        self.robot_radius = rospy.get_param('~robot_radius', 0.18)  # Slightly larger safety margin
         
-        # Path following - Adaptive lookahead
-        self.lookahead_min = 0.4   # Closer tracking
-        self.lookahead_max = 1.2   # Still allows smooth curves
-        self.goal_tolerance = rospy.get_param('~goal_tolerance', 0.3)  # Tighter tolerance
+        # Path following - Closer tracking
+        self.lookahead_min = 0.35
+        self.lookahead_max = 0.9  # Shorter lookahead for tighter following
+        self.goal_tolerance = rospy.get_param('~goal_tolerance', 0.25)
         
-        # Cost weights - Conservative balance for accuracy
-        self.goal_cost_weight = 1.5      # Higher - follow path closely
-        self.speed_cost_weight = 0.6     # Moderate - still encourage movement
-        self.obstacle_cost_weight = 1.3  # Higher - be more careful
+        # Cost weights - VERY CONSERVATIVE
+        self.goal_cost_weight = 2.0      # Much higher - stick to path
+        self.speed_cost_weight = 0.3     # Lower - don't rush
+        self.obstacle_cost_weight = 2.0  # Much higher - safety first
         
         self.current_vel = [0.0, 0.0]
         self.global_path = None
@@ -41,28 +41,28 @@ class DWAPlanner:
         self.current_pose = None
         self.path_received_time = None
         
-        # Smart goal management
+        # Goal management - More patient
         self.closest_distance_to_goal = float('inf')
         self.time_at_goal = None
         self.time_pursuing_goal = None
-        self.max_pursuit_time = 50.0  # More time for difficult navigation
+        self.max_pursuit_time = 60.0  # Much more time
         
-        # Progress tracking
+        # Progress tracking - More lenient
         self.distance_history = []
         self.position_history = []
         self.last_progress_check = rospy.Time.now()
         self.position_at_last_check = None
         
-        # Stuck detection - More patient
+        # Stuck detection - MUCH more patient
         self.consecutive_low_velocity = 0
-        self.stuck_threshold = 20  # 2.0 seconds (20 * 0.1s) - more patient
+        self.stuck_threshold = 30  # 3 seconds before recovery
         self.rotation_recovery_active = False
         self.recovery_start_time = None
-        self.max_recovery_time = 2.5  # Shorter recovery attempts
+        self.max_recovery_time = 3.0
         
         # Oscillation detection
         self.angular_velocity_history = []
-        self.max_angular_history = 20
+        self.max_angular_history = 25
         
         # TF
         self.tf_buffer = tf2_ros.Buffer()
@@ -82,7 +82,7 @@ class DWAPlanner:
         # Control loop
         self.control_timer = rospy.Timer(rospy.Duration(0.1), self.control_loop)
         
-        rospy.loginfo("Conservative DWA Planner - Balanced speed and accuracy for precise navigation")
+        rospy.loginfo("CONSERVATIVE DWA Planner - Safety and reliability over speed")
         
     def path_callback(self, msg):
         self.global_path = msg
@@ -103,7 +103,6 @@ class DWAPlanner:
         self.current_vel = [msg.twist.twist.linear.x, msg.twist.twist.angular.z]
         self.current_pose = msg.pose.pose
         
-        # Track angular velocity for oscillation detection
         self.angular_velocity_history.append(msg.twist.twist.angular.z)
         if len(self.angular_velocity_history) > self.max_angular_history:
             self.angular_velocity_history.pop(0)
@@ -112,24 +111,20 @@ class DWAPlanner:
         self.scan_data = msg
         
     def detect_oscillation(self):
-        """Detect if robot is oscillating left-right"""
-        if len(self.angular_velocity_history) < 10:
+        if len(self.angular_velocity_history) < 12:
             return False
         
-        recent_angular = self.angular_velocity_history[-10:]
-        
-        # Count sign changes
+        recent_angular = self.angular_velocity_history[-12:]
         sign_changes = 0
+        
         for i in range(1, len(recent_angular)):
-            if abs(recent_angular[i]) > 0.2 and abs(recent_angular[i-1]) > 0.2:
+            if abs(recent_angular[i]) > 0.15 and abs(recent_angular[i-1]) > 0.15:
                 if np.sign(recent_angular[i]) != np.sign(recent_angular[i-1]):
                     sign_changes += 1
         
-        # If changing direction more than 3 times in 10 samples, we're oscillating
-        return sign_changes >= 3
+        return sign_changes >= 4
         
     def get_dynamic_window(self):
-        """Calculate dynamic window"""
         v, w = self.current_vel
         
         v_min = max(self.min_vel_x, v - self.max_acc_x * self.dt)
@@ -140,7 +135,6 @@ class DWAPlanner:
         return [v_min, v_max, w_min, w_max]
         
     def predict_trajectory(self, v, w):
-        """Predict trajectory"""
         trajectory = []
         x, y, theta = 0, 0, 0
         
@@ -155,7 +149,7 @@ class DWAPlanner:
         return np.array(trajectory)
     
     def calc_obstacle_cost(self, trajectory):
-        """Obstacle cost - Conservative safety margins"""
+        """Obstacle cost - VERY CONSERVATIVE"""
         if self.scan_data is None:
             return 0.0
         
@@ -183,28 +177,32 @@ class DWAPlanner:
             min_dist_at_point = np.min(dists)
             min_dist = min(min_dist, min_dist_at_point)
         
-        # Conservative safety margin
-        safety_margin = self.robot_radius * 1.4
+        # VERY conservative safety margins
+        safety_margin = self.robot_radius * 1.6  # 60% larger buffer
         if min_dist < safety_margin:
-            return float('inf')
+            return float('inf')  # Absolutely no passage
         
-        # Gradual cost increase with larger danger zone
-        danger_zone = 0.7
+        # Large danger zone with steep penalty
+        danger_zone = 0.9  # Nearly 1 meter
         if min_dist < danger_zone:
             cost = (danger_zone - min_dist) / (danger_zone - safety_margin)
-            return cost * 0.6  # Moderate penalty
+            return cost * 1.0  # Heavy penalty
+        
+        # Even outside danger zone, penalize being close
+        caution_zone = 1.5
+        if min_dist < caution_zone:
+            return 0.2 * (1.0 - (min_dist - danger_zone) / (caution_zone - danger_zone))
         
         return 0.0
     
     def get_lookahead_point(self):
-        """Get lookahead point - adaptive based on speed"""
         if self.global_path is None or len(self.global_path.poses) == 0:
             return None
         
-        # Speed-dependent lookahead - faster = look further ahead
+        # Conservative lookahead - prefer closer targets
         current_speed = abs(self.current_vel[0])
         speed_ratio = current_speed / self.max_vel_x
-        lookahead_dist = self.lookahead_min + (self.lookahead_max - self.lookahead_min) * speed_ratio
+        lookahead_dist = self.lookahead_min + (self.lookahead_max - self.lookahead_min) * speed_ratio * 0.7
         
         try:
             best_point = None
@@ -226,7 +224,6 @@ class DWAPlanner:
                 y = p_base.pose.position.y
                 dist = np.sqrt(x**2 + y**2)
                 
-                # Find point closest to lookahead distance, ahead of robot
                 if x > 0:
                     dist_diff = abs(dist - lookahead_dist)
                     if dist_diff < best_dist_diff:
@@ -240,50 +237,50 @@ class DWAPlanner:
             return None
         
     def calc_goal_cost(self, trajectory):
-        """Goal cost - Precise path following"""
+        """Goal cost - Very precise path following"""
         target = self.get_lookahead_point()
         
         if target is None:
-            return 5.0
+            return 8.0
             
         target_x = target.pose.position.x
         target_y = target.pose.position.y
-        target_dist = np.sqrt(target_x**2 + target_y**2)
         
-        # Angle to target
         target_angle = np.arctan2(target_y, target_x)
         final_angle = trajectory[-1, 2]
         angle_diff = abs(self.normalize_angle(target_angle - final_angle))
         
-        # Distance to target after trajectory
         final_x = trajectory[-1, 0]
         final_y = trajectory[-1, 1]
         final_dist = np.sqrt((final_x - target_x)**2 + (final_y - target_y)**2)
         
-        # Prioritize both heading and reaching the target
-        cost = angle_diff * 1.0 + final_dist * 1.0
+        # Heavy emphasis on both heading and position
+        cost = angle_diff * 1.5 + final_dist * 1.5
         
-        # Moderate penalty for lateral deviation - keep on path
+        # Strong penalty for lateral deviation - stay on path
         if target_x > 0.01:
             cross_track = abs(final_y * np.cos(target_angle) - final_x * np.sin(target_angle))
-            cost += cross_track * 0.6  # Encourage path following
+            cost += cross_track * 1.0  # Very strong path following
         
         return cost
         
     def calc_speed_cost(self, v):
-        """Speed cost - Moderate speed preference"""
+        """Speed cost - Prefer slower speeds"""
         if v < 0:
-            return 3.0  # Strong penalty for backwards
+            return 5.0  # Very strong penalty for backwards
         
-        # Prefer moderate speed (60% of max) for better control
-        target_speed = self.max_vel_x * 0.6
+        # Prefer slow speed (40% of max)
+        target_speed = self.max_vel_x * 0.4
         speed_diff = abs(v - target_speed) / self.max_vel_x
         
-        return speed_diff * 0.6
+        # Penalty for going too fast
+        if v > target_speed:
+            return speed_diff * 1.0
+        
+        return speed_diff * 0.4
         
     @staticmethod
     def normalize_angle(angle):
-        """Normalize angle to [-pi, pi]"""
         while angle > np.pi:
             angle -= 2 * np.pi
         while angle < -np.pi:
@@ -291,7 +288,6 @@ class DWAPlanner:
         return angle
         
     def calc_trajectory_cost(self, v, w):
-        """Total cost"""
         trajectory = self.predict_trajectory(v, w)
         
         obstacle_cost = self.calc_obstacle_cost(trajectory)
@@ -310,7 +306,6 @@ class DWAPlanner:
         return total_cost
         
     def dwa_control(self):
-        """DWA control with recovery logic"""
         dw = self.get_dynamic_window()
         
         best_v, best_w = 0.0, 0.0
@@ -320,7 +315,6 @@ class DWAPlanner:
         v_samples = np.arange(dw[0], dw[1], self.v_resolution)
         w_samples = np.arange(dw[2], dw[3], self.w_resolution)
         
-        # Ensure zero velocity is an option
         if 0.0 not in v_samples and dw[0] <= 0.0 <= dw[1]:
             v_samples = np.append(v_samples, 0.0)
         if 0.0 not in w_samples and dw[2] <= 0.0 <= dw[3]:
@@ -340,18 +334,17 @@ class DWAPlanner:
                     best_w = w
                     best_trajectory = self.predict_trajectory(v, w)
         
-        # Recovery if blocked
+        # Conservative recovery - rotate slowly
         if valid_count == 0:
-            rospy.logwarn_throttle(1.0, "⚠️ BLOCKED - No valid trajectories!")
+            rospy.logwarn_throttle(1.0, "⚠️ BLOCKED - Slow recovery rotation")
             best_v = 0.0
-            best_w = 1.0 if not hasattr(self, 'recovery_direction') else self.recovery_direction
+            best_w = 0.6 if not hasattr(self, 'recovery_direction') else self.recovery_direction
             self.recovery_direction = best_w
             best_trajectory = self.predict_trajectory(best_v, best_w)
         
         return best_v, best_w, best_trajectory
         
     def distance_to_goal(self):
-        """Distance to goal"""
         if self.global_path is None or len(self.global_path.poses) == 0:
             return float('inf')
             
@@ -370,15 +363,14 @@ class DWAPlanner:
             return float('inf')
     
     def check_making_progress(self):
-        """Check if robot is making progress"""
         if self.current_pose is None:
             return True
         
         now = rospy.Time.now()
         time_since_check = (now - self.last_progress_check).to_sec()
         
-        # Check every 4 seconds
-        if time_since_check < 4.0:
+        # Check every 5 seconds (more lenient)
+        if time_since_check < 5.0:
             return True
         
         current_pos = np.array([
@@ -391,48 +383,43 @@ class DWAPlanner:
             self.last_progress_check = now
             return True
         
-        # Calculate movement
         movement = np.linalg.norm(current_pos - self.position_at_last_check)
         
         self.position_at_last_check = current_pos
         self.last_progress_check = now
         
-        # Need at least 30cm in 4 seconds
-        min_required = 0.30
-        if abs(self.current_vel[1]) > 0.4:  # If rotating significantly
-            min_required = 0.20
+        # Lower requirement - only 20cm in 5 seconds
+        min_required = 0.20
+        if abs(self.current_vel[1]) > 0.3:
+            min_required = 0.15
         
         if movement < min_required:
-            rospy.logwarn(f"⚠️ Poor progress: moved only {movement:.2f}m in 4 seconds")
+            rospy.logwarn(f"⚠️ Slow progress: {movement:.2f}m in 5 seconds")
             return False
         
         return True
         
     def control_loop(self, event):
-        """Main control loop"""
-        # No path - stop
         if self.global_path is None or self.current_pose is None:
             cmd = Twist()
             self.cmd_pub.publish(cmd)
             self.rotation_recovery_active = False
             return
         
-        # Get distance to goal
         dist_to_goal = self.distance_to_goal()
         
-        # Update closest distance
         if dist_to_goal < self.closest_distance_to_goal:
             self.closest_distance_to_goal = dist_to_goal
         
-        # GOAL REACHED - More precise check
+        # GOAL REACHED - Stable arrival required
         if dist_to_goal < self.goal_tolerance:
             if self.time_at_goal is None:
                 self.time_at_goal = rospy.Time.now()
             
             time_at_goal = (rospy.Time.now() - self.time_at_goal).to_sec()
             
-            # Need to be stable at goal for 0.8 seconds
-            if time_at_goal > 0.8:
+            # Must be stable for 1 full second
+            if time_at_goal > 1.0:
                 cmd = Twist()
                 self.cmd_pub.publish(cmd)
                 rospy.loginfo(f"✅ Goal reached (dist={dist_to_goal:.2f}m)")
@@ -447,7 +434,7 @@ class DWAPlanner:
         else:
             self.time_at_goal = None
         
-        # TIMEOUT CHECK
+        # TIMEOUT CHECK - More lenient
         if self.time_pursuing_goal is not None:
             pursuit_time = (rospy.Time.now() - self.time_pursuing_goal).to_sec()
             
@@ -466,29 +453,28 @@ class DWAPlanner:
         
         # OSCILLATION DETECTION
         if self.detect_oscillation():
-            rospy.logwarn_throttle(2.0, "🔄 Oscillation detected - trying to break the pattern")
-            # Force a decisive move: stop rotation, push forward if possible
+            rospy.logwarn_throttle(3.0, "🔄 Oscillation detected")
             if not self.rotation_recovery_active:
                 self.rotation_recovery_active = True
                 self.recovery_start_time = rospy.Time.now()
-                self.angular_velocity_history = []  # Clear history
+                self.angular_velocity_history = []
         
-        # Check if recovery is taking too long
+        # Recovery timeout
         if self.rotation_recovery_active and self.recovery_start_time is not None:
             recovery_duration = (rospy.Time.now() - self.recovery_start_time).to_sec()
             if recovery_duration > self.max_recovery_time:
-                rospy.loginfo("Recovery rotation complete")
+                rospy.loginfo("Recovery complete")
                 self.rotation_recovery_active = False
                 self.recovery_start_time = None
         
-        # PROGRESS CHECK
+        # PROGRESS CHECK - More lenient
         if not self.check_making_progress():
             if not hasattr(self, 'no_progress_count'):
                 self.no_progress_count = 0
             self.no_progress_count += 1
             
-            # Give 3 chances (12 seconds total)
-            if self.no_progress_count >= 3:
+            # Give 4 chances (20 seconds total)
+            if self.no_progress_count >= 4:
                 rospy.logerr("❌ No progress - goal unreachable")
                 cmd = Twist()
                 self.cmd_pub.publish(cmd)
@@ -507,32 +493,29 @@ class DWAPlanner:
         # DWA CONTROL
         v, w, trajectory = self.dwa_control()
         
-        # Stuck detection with smarter recovery
-        is_stuck = abs(v) < 0.08 and abs(w) < 0.12  # Tighter thresholds
+        # More lenient stuck detection
+        is_stuck = abs(v) < 0.05 and abs(w) < 0.08
         
         if is_stuck:
             self.consecutive_low_velocity += 1
             
             if self.consecutive_low_velocity >= self.stuck_threshold:
                 if not self.rotation_recovery_active:
-                    rospy.logwarn(f"🚨 STUCK! Initiating recovery rotation")
+                    rospy.logwarn(f"🚨 STUCK - Recovery rotation")
                     self.rotation_recovery_active = True
                     self.recovery_start_time = rospy.Time.now()
                     if not hasattr(self, 'recovery_direction'):
                         self.recovery_direction = 1.0
                     else:
-                        # Alternate direction
                         self.recovery_direction *= -1
                 
-                # During recovery: rotate in place with moderate speed
                 v = 0.0
-                w = self.recovery_direction * 0.9  # Slower recovery rotation
+                w = self.recovery_direction * 0.6  # Slow recovery
                 trajectory = self.predict_trajectory(v, w)
         else:
             self.consecutive_low_velocity = 0
-            # If we're moving well, cancel recovery
-            if self.rotation_recovery_active and abs(v) > 0.15:
-                rospy.loginfo("Movement restored - canceling recovery")
+            if self.rotation_recovery_active and abs(v) > 0.1:
+                rospy.loginfo("Movement restored")
                 self.rotation_recovery_active = False
                 self.recovery_start_time = None
         
@@ -545,15 +528,13 @@ class DWAPlanner:
         # Debug
         pursuit_time = (rospy.Time.now() - self.time_pursuing_goal).to_sec() if self.time_pursuing_goal else 0
         status = "RECOVERING" if self.rotation_recovery_active else "NORMAL"
-        rospy.loginfo_throttle(1.0, 
+        rospy.loginfo_throttle(1.5, 
             f"[{status}] v={v:.2f} w={w:.2f} | dist={dist_to_goal:.2f}m | t={pursuit_time:.0f}s")
         
-        # Visualize
         if trajectory is not None:
             self.publish_local_path(trajectory)
             
     def publish_local_path(self, trajectory):
-        """Publish trajectory visualization"""
         path_msg = Path()
         path_msg.header.stamp = rospy.Time.now()
         path_msg.header.frame_id = "robot1_base_link"

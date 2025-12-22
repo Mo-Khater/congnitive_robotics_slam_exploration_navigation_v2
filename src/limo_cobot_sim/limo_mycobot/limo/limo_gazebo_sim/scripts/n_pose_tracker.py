@@ -21,12 +21,12 @@ class PoseTracker:
     def publish_pose(self, event):
         """Publish current robot pose"""
         try:
-            trans = self.tf_buffer.lookup_transform('limo_map', 'limo_base_link',
+            trans = self.tf_buffer.lookup_transform('map', 'base_link',
                                                    rospy.Time(0), rospy.Duration(0.1))
             
             pose = PoseStamped()
             pose.header.stamp = rospy.Time.now()
-            pose.header.frame_id = 'limo_map'
+            pose.header.frame_id = 'map'
             pose.pose.position.x = trans.transform.translation.x
             pose.pose.position.y = trans.transform.translation.y
             pose.pose.position.z = trans.transform.translation.z

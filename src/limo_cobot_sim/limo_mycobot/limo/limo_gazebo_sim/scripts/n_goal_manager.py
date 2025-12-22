@@ -49,11 +49,11 @@ class GoalManager:
     def get_robot_pose(self):
         """Get current robot pose"""
         try:
-            trans = self.tf_buffer.lookup_transform('limo_map', 'limo_base_link',
+            trans = self.tf_buffer.lookup_transform('map', 'base_link',
                                                    rospy.Time(0), rospy.Duration(0.1))
             
             pose = PoseStamped()
-            pose.header.frame_id = 'limo_map'
+            pose.header.frame_id = 'map'
             pose.pose.position.x = trans.transform.translation.x
             pose.pose.position.y = trans.transform.translation.y
             pose.pose.orientation = trans.transform.rotation

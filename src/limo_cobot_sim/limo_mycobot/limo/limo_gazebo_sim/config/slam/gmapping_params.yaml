@@ -1,0 +1,45 @@
+# GMapping SLAM Parameters for LIMO Robot
+
+# Sensor Parameters
+maxRange: 12.0              # Maximum range of the laser scanner
+maxUrange: 11.5             # Maximum usable range (slightly less than maxRange)
+
+# Map Parameters
+map_update_interval: 2.0    # How often to update the map (seconds)
+xmin: -50.0                 # Minimum x coordinate of the map
+ymin: -50.0                 # Minimum y coordinate of the map
+xmax: 50.0                  # Maximum x coordinate of the map
+ymax: 50.0                  # Maximum y coordinate of the map
+delta: 0.05                 # Map resolution (meters per cell)
+
+# Localization Parameters
+particles: 30               # Number of particles in the filter
+linearUpdate: 0.2           # Process a scan if robot moved this far (meters)
+angularUpdate: 0.25         # Process a scan if robot turned this much (radians)
+temporalUpdate: -1.0        # Process scan if this much time passed (-1 = disabled)
+resampleThreshold: 0.5      # Neff threshold for resampling
+
+# Motion Model Parameters (differential drive)
+srr: 0.1                    # Odometry error in rotation as a function of rotation
+srt: 0.2                    # Odometry error in rotation as a function of translation
+str: 0.1                    # Odometry error in translation as a function of rotation
+stt: 0.2                    # Odometry error in translation as a function of translation
+
+# Likelihood Parameters
+llsamplerange: 0.01         # Translational sampling range for likelihood
+llsamplestep: 0.01          # Translational sampling step for likelihood
+lasamplerange: 0.005        # Angular sampling range for likelihood
+lasamplestep: 0.005         # Angular sampling step for likelihood
+
+# Scan Matcher Parameters
+lskip: 0                    # Number of beams to skip in each scan (0 = use all)
+minimumScore: 0.0           # Minimum score for considering the scan matching outcome good
+
+# Other Parameters
+sigma: 0.05                 # Sigma used by the greedy endpoint matching
+kernelSize: 1               # Kernel size for scan matching
+lstep: 0.05                 # Initial search step for scan matching
+astep: 0.05                 # Initial angular search step for scan matching
+iterations: 5               # Number of iterations of the scan matcher
+lsigma: 0.075               # Sigma used by scan matcher
+ogain: 3.0                  # Gain to be used while evaluating the likelihood

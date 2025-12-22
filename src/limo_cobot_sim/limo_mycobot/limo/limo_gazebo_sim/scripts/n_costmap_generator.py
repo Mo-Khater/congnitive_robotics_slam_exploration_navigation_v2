@@ -109,7 +109,7 @@ class CostmapGenerator:
         # Publish costmap
         costmap_msg = OccupancyGrid()
         costmap_msg.header.stamp = rospy.Time.now()
-        costmap_msg.header.frame_id = "limo_map"
+        costmap_msg.header.frame_id = "map"
         costmap_msg.info = self.map_info
         costmap_msg.data = costmap.flatten().tolist()
         

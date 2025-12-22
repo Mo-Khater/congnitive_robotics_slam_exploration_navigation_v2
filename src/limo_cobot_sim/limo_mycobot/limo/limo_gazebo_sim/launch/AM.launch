@@ -1,0 +1,115 @@
+<?xml version="1.0"?>
+<launch>
+    <!-- 
+        LIMO Real Robot Exploration Launch File
+        
+        Pre-requisites:
+        On the robot terminal, run:
+        $ roslaunch limo_bringup limo_start.launch
+        
+        This provides: /scan, /odom, /imu, /tf, /cmd_vel
+        
+        Then run this file on your workstation or robot to start exploration:
+        $ roslaunch limo_gazebo_sim real_robot_exploration.launch
+    -->
+
+    <!-- Arguments -->
+    <arg name="robot_namespace" default=""/>
+    <arg name="open_rviz" default="true"/>
+    
+    <!-- Load robot description for RViz visualization -->
+    <param name="robot_description" command="$(find xacro)/xacro '$(find limo_description)/urdf/limo/limo_four_diff.xacro'" />
+    
+    <!-- Fake joint state publisher for wheel visualization in RViz -->
+    <!-- The real robot doesn't publish /joint_states, so we publish fake ones -->
+    <node pkg="limo_gazebo_sim" type="fake_joint_state_publisher.py" name="fake_joint_state_publisher" output="screen"/>
+    
+    <!-- Robot state publisher - publishes TF from URDF (for visualization only) -->
+    <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher">
+        <param name="publish_frequency" value="30.0"/>
+    </node>
+    
+    <!-- Static transform: base_footprint -> base_link (z=0.15 as per URDF) -->
+    <!-- This is a backup in case robot_state_publisher doesn't publish it -->
+    <node pkg="tf2_ros" type="static_transform_publisher" name="base_footprint_to_base_link"
+          args="0 0 0.15 0 0 0 base_footprint base_link" />
+    
+    <!-- CRITICAL: Publish odom->base_footprint TF from /odom topic -->
+    <!-- The robot publishes /odom topic but NOT the TF transform -->
+    <!-- We publish to base_footprint, then URDF handles base_footprint->base_link -->
+    <node pkg="limo_gazebo_sim" type="odom_to_tf.py" name="odom_to_tf" output="screen">
+        <param name="odom_topic" value="/odom"/>
+        <param name="base_frame" value="base_footprint"/>
+        <param name="odom_frame" value="odom"/>
+    </node>
+    
+    <!-- Topic names -->
+    <arg name="scan_topic" default="/$(arg robot_namespace)/scan" if="$(eval robot_namespace != '')"/>
+    <arg name="scan_topic" default="/scan" if="$(eval robot_namespace == '')"/>
+    
+    <arg name="cmd_vel_topic" default="/$(arg robot_namespace)/cmd_vel" if="$(eval robot_namespace != '')"/>
+    <arg name="cmd_vel_topic" default="/cmd_vel" if="$(eval robot_namespace == '')"/>
+    
+    <arg name="odom_topic" default="/$(arg robot_namespace)/odom" if="$(eval robot_namespace != '')"/>
+    <arg name="odom_topic" default="/odom" if="$(eval robot_namespace == '')"/>
+
+    <!-- Frame names -->
+    <arg name="global_frame" default="$(arg robot_namespace)/map" if="$(eval robot_namespace != '')"/>
+    <arg name="global_frame" default="map" if="$(eval robot_namespace == '')"/>
+    
+    <arg name="odom_frame" default="$(arg robot_namespace)/odom" if="$(eval robot_namespace != '')"/>
+    <arg name="odom_frame" default="odom" if="$(eval robot_namespace == '')"/>
+    
+    <arg name="base_frame" default="$(arg robot_namespace)/base_footprint" if="$(eval robot_namespace != '')"/>
+    <arg name="base_frame" default="base_footprint" if="$(eval robot_namespace == '')"/>
+
+    <!-- 1. SLAM (Gmapping) - subscribes to /scan and /odom -->
+    <node pkg="gmapping" type="slam_gmapping" name="slam_gmapping" output="screen">
+        <param name="base_frame" value="$(arg base_frame)"/>
+        <param name="odom_frame" value="$(arg odom_frame)"/>
+        <param name="map_frame" value="$(arg global_frame)"/>
+        <remap from="scan" to="$(arg scan_topic)"/>
+        <rosparam command="load" file="$(find limo_gazebo_sim)/config/slam/gmapping_params.yaml" />
+    </node>
+
+    <!-- 2. Navigation (Move Base) - subscribes to /scan, /odom, publishes /cmd_vel -->
+    <node pkg="move_base" type="move_base" respawn="false" name="move_base" output="screen">
+        <rosparam file="$(find limo_gazebo_sim)/config/navigation/costmap_common_params.yaml" command="load" ns="global_costmap" subst_value="true"/>
+        <rosparam file="$(find limo_gazebo_sim)/config/navigation/costmap_common_params.yaml" command="load" ns="local_costmap" subst_value="true"/>
+        <rosparam file="$(find limo_gazebo_sim)/config/navigation/local_costmap_params.yaml" command="load" />
+        <rosparam file="$(find limo_gazebo_sim)/config/navigation/global_costmap_params.yaml" command="load" />
+        <rosparam file="$(find limo_gazebo_sim)/config/navigation/move_base_params.yaml" command="load" />
+        <rosparam file="$(find limo_gazebo_sim)/config/navigation/base_local_planner_params.yaml" command="load" />
+        
+        <param name="global_costmap/robot_base_frame" value="$(arg base_frame)"/>
+        <param name="local_costmap/robot_base_frame" value="$(arg base_frame)"/>
+        <param name="local_costmap/global_frame" value="$(arg odom_frame)"/>
+        <param name="global_costmap/global_frame" value="$(arg global_frame)"/>
+        
+        <param name="global_costmap/obstacle_layer/laser_scan_sensor/topic" value="$(arg scan_topic)"/>
+        <param name="local_costmap/obstacle_layer/laser_scan_sensor/topic" value="$(arg scan_topic)"/>
+        
+        <remap from="cmd_vel" to="$(arg cmd_vel_topic)"/>
+        <remap from="odom" to="$(arg odom_topic)"/>
+    </node>
+
+    <!-- 3. Autonomous Exploration (explore_lite) -->
+    <node pkg="explore_lite" type="explore" respawn="false" name="explore" output="screen">
+        <param name="robot_base_frame" value="$(arg base_frame)"/>
+        <param name="costmap_topic" value="map"/>
+        <param name="costmap_updates_topic" value="map_updates"/>
+        <param name="visualize" value="true"/>
+        <param name="planner_frequency" value="0.33"/>
+        <param name="progress_timeout" value="30.0"/>
+        <param name="potential_scale" value="3.0"/>
+        <param name="orientation_scale" value="0.0"/>
+        <param name="gain_scale" value="1.0"/>
+        <param name="transform_tolerance" value="0.3"/>
+        <param name="min_frontier_size" value="0.5"/>
+    </node>
+
+    <!-- 4. RViz Visualization -->
+    <node if="$(arg open_rviz)" name="rviz" pkg="rviz" type="rviz" 
+          args="-d $(find limo_gazebo_sim)/config/rviz/slam.rviz" />
+
+</launch>

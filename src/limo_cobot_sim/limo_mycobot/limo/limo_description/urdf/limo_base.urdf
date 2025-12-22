@@ -666,7 +666,7 @@
                 </noise>
               </ray>
               <plugin name="gazebo_ros_laser_sensor" filename="libgazebo_ros_laser.so">
-                <topicName>/limo/scan</topicName>
+                <topicName>scan</topicName>
                 <frameName>laser_link</frameName>
               </plugin>
             </sensor>

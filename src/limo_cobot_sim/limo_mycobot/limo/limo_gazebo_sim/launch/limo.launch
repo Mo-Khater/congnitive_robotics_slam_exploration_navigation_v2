@@ -7,8 +7,6 @@
   <arg name="use_slam" default="true"/>
   <arg name="use_navigation" default="true"/>
   <arg name="use_exploration" default="true"/>
-  <arg name="slam_toolbox_config"
-       default="$(find limo_gazebo_sim)/config/slam_toolbox.yaml"/>
 
   <!-- ================= Gazebo ================= -->
   <include file="$(find gazebo_ros)/launch/empty_world.launch">
@@ -20,7 +18,7 @@
 
   <!-- ================= Robot Description ================= -->
   <param name="robot_description"
-         command="$(find xacro)/xacro '$(find limo_description)/urdf/n_four_diff.xacro'" />
+         command="$(find xacro)/xacro '$(find limo_description)/urdf/limo/limo_four_diff.xacro'" />
 
   <!-- ================= Spawn Robot ================= -->
   <node name="spawn_limo"
@@ -48,18 +46,75 @@
         args="limo_state_controller"
         output="screen"/>
 
-  <!-- ================= SLAM ================= -->
-  <group if="$(arg use_slam)">
-    <node pkg="slam_toolbox"
-          type="async_slam_toolbox_node"
-          name="slam_toolbox"
-          output="screen">
-      <rosparam command="load" file="$(arg slam_toolbox_config)"/>
+  <!-- ================= Topic Remapping ================= -->
+  <arg name="use_limo_namespace" default="true"/>
+  
+  <node pkg="topic_tools" type="relay" name="scan_relay" 
+        args="/limo/scan /scan" output="screen" 
+        if="$(arg use_limo_namespace)"/>
 
-      <param name="map_frame"  value="limo_map"/>
-      <param name="odom_frame" value="limo_odom"/>
-      <param name="base_frame" value="limo_base_footprint"/>
-      <param name="use_map_saver" value="false"/>
+  <!-- ================= SLAM with GMapping (OPTIMIZED) ================= -->
+  <group if="$(arg use_slam)">
+    <node pkg="gmapping" type="slam_gmapping" name="slam_gmapping" output="screen">
+      <!-- Frame names -->
+      <param name="map_frame" value="map"/>
+      <param name="odom_frame" value="odom"/>
+      <param name="base_frame" value="base_footprint"/>
+      
+      <!-- Topic names -->
+      <param name="scan" value="/scan"/>
+      
+      <!-- CRITICAL: Faster map updates for navigation -->
+      <param name="map_update_interval" value="0.5"/>  <!-- Changed from 2.0 to 0.5 -->
+      
+      <!-- CRITICAL: Faster transform publishing -->
+      <param name="transform_publish_period" value="0.02"/>  <!-- Changed from 0.05 to 0.02 (50Hz) -->
+      
+      <!-- Range parameters -->
+      <param name="maxUrange" value="7.5"/>
+      <param name="maxRange" value="8.0"/>
+      
+      <!-- Motion model parameters -->
+      <param name="sigma" value="0.05"/>
+      <param name="kernelSize" value="1"/>
+      <param name="lstep" value="0.05"/>
+      <param name="astep" value="0.05"/>
+      <param name="iterations" value="5"/>
+      <param name="lsigma" value="0.075"/>
+      <param name="ogain" value="3.0"/>
+      <param name="lskip" value="0"/>
+      
+      <!-- Map size and resolution -->
+      <param name="srr" value="0.01"/>
+      <param name="srt" value="0.02"/>
+      <param name="str" value="0.01"/>
+      <param name="stt" value="0.02"/>
+      
+      <!-- CRITICAL: More responsive updates -->
+      <param name="linearUpdate" value="0.1"/>  <!-- Changed from 0.2 to 0.1 -->
+      <param name="angularUpdate" value="0.1"/>  <!-- Changed from 0.2 to 0.1 -->
+      <param name="temporalUpdate" value="0.5"/>
+      <param name="resampleThreshold" value="0.5"/>
+      
+      <!-- Particle filter - increased for better tracking -->
+      <param name="particles" value="80"/>  <!-- Changed from 50 to 80 -->
+      
+      <!-- Map dimensions -->
+      <param name="xmin" value="-50.0"/>
+      <param name="ymin" value="-50.0"/>
+      <param name="xmax" value="50.0"/>
+      <param name="ymax" value="50.0"/>
+      <param name="delta" value="0.05"/>
+      
+      <!-- Likelihood sampling -->
+      <param name="llsamplerange" value="0.01"/>
+      <param name="llsamplestep" value="0.01"/>
+      <param name="lasamplerange" value="0.005"/>
+      <param name="lasamplestep" value="0.005"/>
+      
+      <!-- Occupancy threshold -->
+      <param name="occ_thresh" value="0.25"/>
+      <param name="minimumScore" value="50"/>
     </node>
   </group>
 
@@ -116,6 +171,169 @@
   </group>
 
   <!-- ================= RViz ================= -->
+  <node pkg="rviz"
+        type="rviz"
+        name="rviz"
+        args="-d $(find limo_gazebo_sim)/rviz/rviz_config.rviz"/>
+
+</launch>
+
+
+
+
+
+<?xml version="1.0"?>
+<launch>
+
+  <!-- ================= Arguments ================= -->
+  <arg name="use_slam" default="true"/>
+  <arg name="use_navigation" default="true"/>
+  <arg name="use_exploration" default="true"/>
+
+  <!-- ================= Robot Description ================= -->
+  <!-- Real robot publishes this via limo_base -->
+  <!-- <param name="robot_description"
+         command="$(find xacro)/xacro '$(find limo_description)/urdf/limo/limo_four_diff.xacro'" /> -->
+
+  <!-- ================= State Publishers ================= -->
+  <!-- Real robot handles joint states internally -->
+  <!-- <node pkg="joint_state_publisher"
+        type="joint_state_publisher"
+        name="joint_state_publisher"/> -->
+
+  <node pkg="robot_state_publisher"
+        type="robot_state_publisher"
+        name="robot_state_publisher"/>
+
+  <!-- ================= Topic Remapping ================= -->
+  <!-- Check if your real robot publishes to /scan or /limo/scan -->
+  <!-- Uncomment if needed -->
+  <!-- <arg name="use_limo_namespace" default="false"/>
+  
+  <node pkg="topic_tools" type="relay" name="scan_relay" 
+        args="/limo/scan /scan" output="screen" 
+        if="$(arg use_limo_namespace)"/> -->
+
+  <!-- ================= SLAM with GMapping (OPTIMIZED FOR REAL ROBOT) ================= -->
+  <group if="$(arg use_slam)">
+    <node pkg="gmapping" type="slam_gmapping" name="slam_gmapping" output="screen">
+      <!-- Frame names -->
+      <param name="map_frame" value="map"/>
+      <param name="odom_frame" value="odom"/>
+      <param name="base_frame" value="base_footprint"/>
+      
+      <!-- Topic names - verify your real robot's scan topic -->
+      <param name="scan" value="/scan"/>
+      
+      <!-- CRITICAL: Faster map updates for navigation -->
+      <param name="map_update_interval" value="0.5"/>
+      
+      <!-- CRITICAL: Faster transform publishing -->
+      <param name="transform_publish_period" value="0.02"/>
+      
+      <!-- Range parameters - adjust based on your real LiDAR specs -->
+      <param name="maxUrange" value="7.5"/>
+      <param name="maxRange" value="8.0"/>
+      
+      <!-- Motion model parameters -->
+      <param name="sigma" value="0.05"/>
+      <param name="kernelSize" value="1"/>
+      <param name="lstep" value="0.05"/>
+      <param name="astep" value="0.05"/>
+      <param name="iterations" value="5"/>
+      <param name="lsigma" value="0.075"/>
+      <param name="ogain" value="3.0"/>
+      <param name="lskip" value="0"/>
+      
+      <!-- Map size and resolution -->
+      <param name="srr" value="0.01"/>
+      <param name="srt" value="0.02"/>
+      <param name="str" value="0.01"/>
+      <param name="stt" value="0.02"/>
+      
+      <!-- CRITICAL: More responsive updates -->
+      <param name="linearUpdate" value="0.1"/>
+      <param name="angularUpdate" value="0.1"/>
+      <param name="temporalUpdate" value="0.5"/>
+      <param name="resampleThreshold" value="0.5"/>
+      
+      <!-- Particle filter - increased for better tracking -->
+      <param name="particles" value="80"/>
+      
+      <!-- Map dimensions - adjust based on your environment -->
+      <param name="xmin" value="-50.0"/>
+      <param name="ymin" value="-50.0"/>
+      <param name="xmax" value="50.0"/>
+      <param name="ymax" value="50.0"/>
+      <param name="delta" value="0.05"/>
+      
+      <!-- Likelihood sampling -->
+      <param name="llsamplerange" value="0.01"/>
+      <param name="llsamplestep" value="0.01"/>
+      <param name="lasamplerange" value="0.005"/>
+      <param name="lasamplestep" value="0.005"/>
+      
+      <!-- Occupancy threshold -->
+      <param name="occ_thresh" value="0.25"/>
+      <param name="minimumScore" value="50"/>
+    </node>
+  </group>
+
+  <!-- ================= Navigation ================= -->
+  <group if="$(arg use_navigation)">
+
+    <node name="pose_tracker"
+          pkg="limo_gazebo_sim"
+          type="n_pose_tracker.py"
+          output="screen"/>
+
+    <node name="global_planner"
+          pkg="limo_gazebo_sim"
+          type="n_global_planner.py"
+          output="screen"/>
+
+    <node name="local_planner"
+          pkg="limo_gazebo_sim"
+          type="n_local_planner.py"
+          output="screen">
+      <!-- Adjust velocities for real robot safety -->
+      <param name="max_vel_x" value="0.4"/>  <!-- Reduced for safety -->
+      <param name="min_vel_x" value="-0.15"/>
+      <param name="max_vel_theta" value="0.8"/>  <!-- Reduced for safety -->
+      <param name="max_acc_x" value="0.4"/>
+      <param name="max_acc_theta" value="0.8"/>
+      <param name="dt" value="0.2"/>
+      <param name="predict_time" value="2.0"/>
+      <param name="robot_radius" value="0.2"/>
+    </node>
+
+    <node name="costmap_generator"
+          pkg="limo_gazebo_sim"
+          type="n_costmap_generator.py"
+          output="screen"/>
+
+    <node name="goal_manager"
+          pkg="limo_gazebo_sim"
+          type="n_goal_manager.py"
+          output="screen"/>
+
+    <node name="obstacle_detector"
+          pkg="limo_gazebo_sim"
+          type="n_obstacle_detector.py"
+          output="screen"/>
+
+  </group>
+
+  <!-- ================= Exploration ================= -->
+  <group if="$(arg use_exploration)">
+    <node name="frontier_explorer"
+          pkg="limo_gazebo_sim"
+          type="n_frontier_explorer.py"
+          output="screen"/>
+  </group>
+
+  <!-- ================= RViz (Optional - for monitoring) ================= -->
+  <!-- Uncomment to run RViz on the robot or remotely -->
   <node pkg="rviz"
         type="rviz"
         name="rviz"
