@@ -1,9 +1,9 @@
 shutdown_costmaps: false
 controller_frequency: 2.0       # Reduced from 10Hz - gives more time for planning
-planner_patience: 2.0           # Reduced - fail faster and try recovery
+planner_patience: 3.0           # Reduced - fail faster and try recovery
 controller_patience: 3.0        # Reduced - detect stuck faster
 conservative_reset_dist: 1.0    # Reduced - clear closer obstacles
-planner_frequency: 1.0          # Reduced from 2.0 - less CPU, still responsive
+planner_frequency: 5.0          # Reduced from 2.0 - less CPU, still responsive
 # Too small timeouts can cause repeated recoveries even when robot is fine but moving slowly.
 oscillation_timeout: 5.0
 oscillation_distance: 0.20

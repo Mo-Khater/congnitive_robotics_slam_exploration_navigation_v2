@@ -1,16 +1,13 @@
 # Robot Footprint - LIMO robot dimensions
 footprint: [[-0.16, -0.11], [-0.16, 0.11], [0.16, 0.11], [0.16, -0.11]]
+footprint_padding: 0.01
 
-# Small padding for narrow passages
-footprint_padding: 0.02
-
-# Increased tolerance for multi-robot TF delays
 transform_tolerance: 0.5
 
 obstacle_layer:
   enabled: true
-  obstacle_range: 2.5          # Reduced from 3.0 - react closer to obstacles
-  raytrace_range: 3.0          # Reduced from 3.5 - clear space closer
+  obstacle_range: 2.5
+  raytrace_range: 3.0
   track_unknown_space: true
   combination_method: 1
   
@@ -24,9 +21,8 @@ obstacle_layer:
     obstacle_range: 2.5
     raytrace_range: 3.0
 
-inflation_layer:
+inflation_layer: 
   enabled: true
-  # Higher value = costs drop off faster from obstacles (less conservative)
-  cost_scaling_factor: 2.5
-  # Larger inflation for better corner avoidance - robot width is ~0.22m
-  inflation_radius: 0.25
+  # CRITICAL: Balance between safety and navigability
+  cost_scaling_factor: 10.0    # Higher = steeper cost dropoff, less conservative
+  inflation_radius: 0.35       # Slightly reduced - was causing too much inflation
