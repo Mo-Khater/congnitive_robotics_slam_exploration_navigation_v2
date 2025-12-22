@@ -1,0 +1,131 @@
+<?xml version="1.0"?>
+<launch>
+    <!-- 
+        LIMO Gazebo Simulation Exploration Launch File
+        
+        This launches Gazebo simulation with autonomous exploration.
+        Run this file to test exploration in simulation:
+        $ roslaunch limo_gazebo_sim gazebo_exploration.launch
+    -->
+
+    <!-- Arguments -->
+    <arg name="robot_namespace" default=""/>
+    <arg name="open_rviz" default="true"/>
+    <arg name="world_name" default="$(find limo_gazebo_sim)/worlds/map2.world"/>
+    <arg name="gui" default="true"/>
+    <arg name="x" default="0.0"/>
+    <arg name="y" default="0.0"/>
+    <arg name="z" default="0.1"/>
+    <arg name="yaw" default="0.0"/>
+    <arg name="use_slam" default="true"/>
+    <arg name="use_navigation" default="true"/>
+    <arg name="use_exploration" default="true"/>
+    <arg name="use_limo_namespace" default="true"/>
+    
+    <!-- Start Gazebo -->
+    <include file="$(find gazebo_ros)/launch/empty_world.launch">
+        <arg name="world_name" value="$(arg world_name)"/>
+        <arg name="paused" value="false"/>
+        <arg name="use_sim_time" value="true"/>
+        <arg name="gui" value="$(arg gui)"/>
+        <arg name="headless" value="false"/>
+        <arg name="debug" value="false"/>
+    </include>
+    
+    <!-- Load robot description -->
+    <param name="robot_description" command="$(find xacro)/xacro '$(find limo_description)/urdf/limo/limo_four_diff.xacro'" />
+    
+    <!-- Spawn robot in Gazebo -->
+    <node name="spawn_urdf" pkg="gazebo_ros" type="spawn_model" 
+          args="-urdf -model limo -x $(arg x) -y $(arg y) -z $(arg z) -Y $(arg yaw) -param robot_description" 
+          output="screen"/>
+    
+    <!-- Robot state publisher -->
+    <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher">
+        <param name="publish_frequency" value="30.0"/>
+    </node>
+    
+    <!-- Joint state publisher (reads from Gazebo) -->
+    <node name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher">
+        <param name="use_gui" value="false"/>
+    </node>
+    
+    <!-- Controllers -->
+    <rosparam file="$(find limo_gazebo_sim)/config/limo_four_diff_control.yaml" command="load"/>
+    <node name="controller_spawner" pkg="controller_manager" type="spawner" 
+          args="limo_state_controller" output="screen"/>
+    
+    <!-- Topic Remapping: relay /limo/scan to /scan if using limo namespace -->
+    <node if="$(arg use_limo_namespace)" pkg="topic_tools" type="relay" name="scan_relay" 
+          args="/limo/scan /scan" output="screen"/>
+    
+    <!-- Topic names -->
+    <arg name="scan_topic" default="/$(arg robot_namespace)/scan" if="$(eval robot_namespace != '')"/>
+    <arg name="scan_topic" default="/scan" if="$(eval robot_namespace == '')"/>
+    
+    <arg name="cmd_vel_topic" default="/$(arg robot_namespace)/cmd_vel" if="$(eval robot_namespace != '')"/>
+    <arg name="cmd_vel_topic" default="/cmd_vel" if="$(eval robot_namespace == '')"/>
+    
+    <arg name="odom_topic" default="/$(arg robot_namespace)/odom" if="$(eval robot_namespace != '')"/>
+    <arg name="odom_topic" default="/odom" if="$(eval robot_namespace == '')"/>
+
+    <!-- Frame names -->
+    <arg name="global_frame" default="$(arg robot_namespace)/map" if="$(eval robot_namespace != '')"/>
+    <arg name="global_frame" default="map" if="$(eval robot_namespace == '')"/>
+    
+    <arg name="odom_frame" default="$(arg robot_namespace)/odom" if="$(eval robot_namespace != '')"/>
+    <arg name="odom_frame" default="odom" if="$(eval robot_namespace == '')"/>
+    
+    <arg name="base_frame" default="$(arg robot_namespace)/base_footprint" if="$(eval robot_namespace != '')"/>
+    <arg name="base_frame" default="base_footprint" if="$(eval robot_namespace == '')"/>
+
+    <!-- 1. SLAM (Gmapping) -->
+    <node if="$(arg use_slam)" pkg="gmapping" type="slam_gmapping" name="slam_gmapping" output="screen">
+        <param name="base_frame" value="$(arg base_frame)"/>
+        <param name="odom_frame" value="$(arg odom_frame)"/>
+        <param name="map_frame" value="$(arg global_frame)"/>
+        <remap from="scan" to="$(arg scan_topic)"/>
+        <rosparam command="load" file="$(find limo_gazebo_sim)/config/slam/gmapping_params.yaml" />
+    </node>
+
+    <!-- 2. Navigation (Move Base) -->
+    <node if="$(arg use_navigation)" pkg="move_base" type="move_base" respawn="false" name="move_base" output="screen">
+        <rosparam file="$(find limo_gazebo_sim)/config/navigation/costmap_common_params.yaml" command="load" ns="global_costmap" subst_value="true"/>
+        <rosparam file="$(find limo_gazebo_sim)/config/navigation/costmap_common_params.yaml" command="load" ns="local_costmap" subst_value="true"/>
+        <rosparam file="$(find limo_gazebo_sim)/config/navigation/local_costmap_params.yaml" command="load" />
+        <rosparam file="$(find limo_gazebo_sim)/config/navigation/global_costmap_params.yaml" command="load" />
+        <rosparam file="$(find limo_gazebo_sim)/config/navigation/move_base_params.yaml" command="load" />
+        <rosparam file="$(find limo_gazebo_sim)/config/navigation/base_local_planner_params.yaml" command="load" />
+        
+        <param name="global_costmap/robot_base_frame" value="$(arg base_frame)"/>
+        <param name="local_costmap/robot_base_frame" value="$(arg base_frame)"/>
+        <param name="local_costmap/global_frame" value="$(arg odom_frame)"/>
+        <param name="global_costmap/global_frame" value="$(arg global_frame)"/>
+        
+        <param name="global_costmap/obstacle_layer/laser_scan_sensor/topic" value="$(arg scan_topic)"/>
+        <param name="local_costmap/obstacle_layer/laser_scan_sensor/topic" value="$(arg scan_topic)"/>
+        
+        <remap from="cmd_vel" to="$(arg cmd_vel_topic)"/>
+        <remap from="odom" to="$(arg odom_topic)"/>
+    </node>
+
+    <!-- 3. Autonomous Exploration (explore_lite) -->
+    <node if="$(arg use_exploration)" pkg="explore_lite" type="explore" respawn="false" name="explore" output="screen">
+        <param name="robot_base_frame" value="$(arg base_frame)"/>
+        <param name="costmap_topic" value="map"/>
+        <param name="costmap_updates_topic" value="map_updates"/>
+        <param name="visualize" value="true"/>
+        <param name="planner_frequency" value="0.33"/>
+        <param name="progress_timeout" value="30.0"/>
+        <param name="potential_scale" value="3.0"/>
+        <param name="orientation_scale" value="0.0"/>
+        <param name="gain_scale" value="1.0"/>
+        <param name="transform_tolerance" value="0.3"/>
+        <param name="min_frontier_size" value="0.5"/>
+    </node>
+
+    <!-- 4. RViz Visualization -->
+    <node if="$(arg open_rviz)" name="rviz" pkg="rviz" type="rviz" 
+          args="-d $(find limo_gazebo_sim)/rviz/rviz_config.rviz" />
+
+</launch>

@@ -7,8 +7,6 @@
   <arg name="use_slam" default="true"/>
   <arg name="use_navigation" default="true"/>
   <arg name="use_exploration" default="true"/>
-  <arg name="slam_toolbox_config"
-       default="$(find limo_gazebo_sim)/config/slam_toolbox.yaml"/>
 
   <!-- ================= Gazebo ================= -->
   <include file="$(find gazebo_ros)/launch/empty_world.launch">
@@ -48,20 +46,22 @@
         args="limo_state_controller"
         output="screen"/>
 
-  <!-- ================= SLAM ================= -->
-  <group if="$(arg use_slam)">
-    <node pkg="slam_toolbox"
-          type="async_slam_toolbox_node"
-          name="slam_toolbox"
-          output="screen">
-      <rosparam command="load" file="$(arg slam_toolbox_config)"/>
+  <!-- ================= Topic Remapping ================= -->
+  <arg name="use_limo_namespace" default="true"/>
+  
+  <node pkg="topic_tools" type="relay" name="scan_relay" 
+        args="/limo/scan /scan" output="screen" 
+        if="$(arg use_limo_namespace)"/>
 
-      <param name="map_frame"  value="map"/>
+    <node pkg="gmapping" type="slam_gmapping" name="slam_gmapping" output="screen">
+        <param name="map_frame" value="map"/>
       <param name="odom_frame" value="odom"/>
       <param name="base_frame" value="base_footprint"/>
-      <param name="use_map_saver" value="false"/>
+        <remap from="scan" to="/scan"/>
+        <rosparam command="load" file="$(find limo_gazebo_sim)/config/slam/gmapping_params.yaml" />
     </node>
-  </group>
+
+  
 
   <!-- ================= Navigation ================= -->
   <group if="$(arg use_navigation)">
@@ -122,3 +122,5 @@
         args="-d $(find limo_gazebo_sim)/rviz/rviz_config.rviz"/>
 
 </launch>
+
+
