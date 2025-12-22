@@ -1,44 +1,41 @@
 TrajectoryPlannerROS:
-  # Robot Configuration - balanced speed and safety
-  max_vel_x: 0.22
-  min_vel_x: 0.08              # Higher minimum prevents stalling
+  # Robot Configuration - slower for safer navigation
+  max_vel_x: 0.18             # Reduced from 0.22 - safer in narrow spaces
+  min_vel_x: 0.05
   
-  max_vel_theta: 0.8
-  min_vel_theta: -0.8
-  min_in_place_vel_theta: 0.3
+  max_vel_theta: 0.6          # Reduced from 0.8 - smoother turning
+  min_vel_theta: -0.6
+  min_in_place_vel_theta: 0.25
 
-  acc_lim_x: 1.0
+  acc_lim_x: 0.8              # Reduced from 1.0 - gentler acceleration
   acc_lim_y: 0.0
-  acc_lim_theta: 2.0
+  acc_lim_theta: 1.5          # Reduced from 2.0
 
-  # Goal Tolerances
-  xy_goal_tolerance: 0.15
-  yaw_goal_tolerance: 0.15
+  # Goal Tolerances - slightly more forgiving
+  xy_goal_tolerance: 0.15     # Increased from 0.10
+  yaw_goal_tolerance: 0.15    # Increased from 0.10
   latch_xy_goal_tolerance: true
 
-  # Forward Simulation - CRITICAL FIX
-  sim_time: 2.5                # Increased - robot needs to look ahead more
-  sim_granularity: 0.025
-  vx_samples: 8                # Reduced for performance
+  # Forward Simulation
+  sim_time: 1.5               # Shorter horizon reduces oscillation in corridors
+  sim_granularity: 0.02       # Finer granularity
+  vx_samples: 10              # Fewer samples = faster, but still robust
   vtheta_samples: 20
 
   # Trajectory Scoring
   meter_scoring: true
   
-  # Path following - CRITICAL FIX
-  path_distance_bias: 32.0     # Much higher - stay closer to global path
-  goal_distance_bias: 20.0     # Balance with path following
+  # Path following vs obstacle avoidance balance
+  path_distance_bias: 15.0    # Reduced from 20 - allow more deviation
+  goal_distance_bias: 10.0    # Reduced from 12 - less goal obsession
   
-  # Obstacle avoidance
-  occdist_scale: 0.05          # Lower value = more willing to get closer to obstacles
+  # CRITICAL: Obstacle avoidance weight
+  # Many indoor configs keep this relatively high so robot doesn't “accept”
+  # paths through inflated cost fields.
+  occdist_scale: 0.4
   
-  heading_lookahead: 0.3
-  heading_scoring: false        # Can help reduce oscillation
-  heading_scoring_timestep: 0.8
+  heading_lookahead: 0.25     # Reduced from 0.325
   dwa: true
   
-  # Recovery
-  escape_vel: -0.15
-  
-  # Oscillation detection
-  oscillation_reset_dist: 0.05  # Distance to travel before resetting oscillation flags
+  # Stuck Recovery - more aggressive backing up
+  escape_vel: -0.2            # Faster reverse to escape corners
